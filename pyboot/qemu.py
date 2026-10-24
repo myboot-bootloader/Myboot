@@ -12,7 +12,7 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from . import console
 from .env import Env
@@ -121,23 +121,8 @@ def run(
     console.info("$ " + " ".join(cmd))
 
     child = pexpect.spawn(cmd[0], cmd[1:], encoding="utf-8", timeout=timeout)
-    captured = []
-    timed_out = False
-    markers = stop_on or []
     try:
-        # Read incrementally so we can stop as soon as a marker appears.
-        patterns = [pexpect.EOF, pexpect.TIMEOUT] + markers
-        while True:
-            idx = child.expect(patterns)
-            captured.append(child.before or "")
-            if idx == 0:  # EOF
-                break
-            if idx == 1:  # TIMEOUT
-                timed_out = True
-                break
-            # a marker matched; grab the matched text and stop
-            captured.append(child.after or "")
-            break
+        output, timed_out = _capture(child, stop_on or [])
     finally:
         if child.isalive():
             child.terminate(force=True)
@@ -146,4 +131,34 @@ def run(
         except OSError:
             pass
 
-    return QemuResult(output="".join(captured), timed_out=timed_out)
+    return QemuResult(output=output, timed_out=timed_out)
+
+
+# How long to wait for the rest of a line after a stop marker matched mid-line.
+LINE_GRACE_SECS = 2
+
+
+def _capture(child, markers: List[str]) -> Tuple[str, bool]:
+    """Read ``child`` until EOF, its timeout, or a ``markers`` match.
+
+    Returns ``(output, timed_out)``. After a marker matches, the rest of THAT
+    line is read too (bounded by ``LINE_GRACE_SECS``): pexpect stops at the end
+    of the match, and ``logparse`` needs whole lines (e.g. ``... 2 bootable``,
+    ``... (3 tried)``). A marker with no line ending still returns promptly.
+    """
+    import pexpect  # lazy, as in run(): pure-logic tests need no dependency
+
+    captured: List[str] = []
+    idx = child.expect([pexpect.EOF, pexpect.TIMEOUT] + markers)
+    captured.append(child.before or "")
+    if idx == 0:  # EOF
+        return "".join(captured), False
+    if idx == 1:  # TIMEOUT
+        return "".join(captured), True
+    # A marker matched: keep it, then finish its line.
+    captured.append(child.after or "")
+    rest = child.expect([r"\r?\n", pexpect.EOF, pexpect.TIMEOUT], timeout=LINE_GRACE_SECS)
+    captured.append(child.before or "")
+    if rest == 0:
+        captured.append(child.after or "")
+    return "".join(captured), False

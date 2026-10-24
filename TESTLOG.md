@@ -403,3 +403,78 @@ Options:
 - Not addressed (noted only): step 4 still reads whole loader binaries (2–3 MB) on
   volumes without a better name source. B could later use a bounded read once a ranged
   `FileStore` read exists.
+
+## 2026-10-24 — Fix: harness stop markers no longer truncate the matched line (branch feat/bug-fix)
+
+Implements part 1 of the proposal above. `pyboot/qemu.py`: the read loop is now
+`_capture(child, markers)`. After a marker matches, it reads the rest of that line
+(`expect([r"\r?\n", EOF, TIMEOUT], timeout=LINE_GRACE_SECS=2)`). So
+`no candidate could be booted (N tried)` and any future marker line reach `logparse`
+whole. `run()` behaves the same otherwise.
+
+New `tools/tests/test_qemu_capture.py` (4 tests, driven by `sh -c printf …`, no QEMU):
+- a marker mid-line gives the whole line;
+- the dead-end line parses as `NoCandidate(3)`;
+- a marker with no line ending returns within the grace period;
+- a timeout is reported.
+
+Mutation check: with the end-of-line read removed (old behaviour), 3 of the 4 fail. With
+it restored, all pass.
+
+Ran:
+- pytest 14 passed (was 10).
+- `./manage.py smoke` 6/6.
+- `./manage.py iso-test --no-ui <Ubuntu 26.04.1, Parrot 7.3>` 2/2.
+
+## 2026-10-24 — Fix: name live ISOs from SBAT metadata (Parrot no longer "Debian") (branch feat/bug-fix)
+
+Implements option B of the proposal above, approved by the reviewer.
+
+Changes:
+- `crates/storage/src/pe/section.rs` (new): `section::find(buf, name)`, a total PE/COFF
+  section-table walk using only the checked `bytes` helpers. Sections are capped at the
+  PE/COFF limit of 96. The length is `VirtualSize` when smaller than the padded
+  `SizeOfRawData`. Also added to the storage "no input panics" sweep. New Kani harness
+  `pe_section_find_is_total` in `proofs.rs`. It is **written but not run**: cargo-kani is
+  not installed here.
+- `crates/discovery/src/sbat.rs` (new): `distro_from_sbat(section)`. It parses the SBAT CSV
+  and takes the LAST `<component>.<vendor>` whose vendor EXACTLY matches the distro table
+  (`esp::DISTRO_MARKERS`, now `pub(crate)`). It skips non-distro suffixes
+  (`grub.peimage`) and unknown ones (`grub.debian14`). There is no substring matching.
+- `crates/discovery/src/esp.rs` `media_name` step 4:
+  - Loaders are read once each, in order `grubx64.efi` → `BOOTX64.EFI` → `shimx64.efi`
+    (was BOOTX64 first).
+  - SBAT is tried on each first. Only if none names a known distro does it fall back to
+    the old marker substring scan, in the same order.
+  - Steps 1–3 (BOOT.CSV, .disk/info, grub.cfg) and step 5 (label) are unchanged.
+
+Tests (10 new):
+- storage 2: named section + VirtualSize trim + absent/prefix name; malformed and
+  truncated images, too many sections, far pointer.
+- sbat 5: last vendor wins; peimage skipped; Debian shim; NUL padding / upstream-only;
+  malformed input and "details".
+- esp 3: Parrot layout (Debian shim + parrot GRUB) gives "Parrot OS"; Ubuntu layout gives
+  "Ubuntu"; SBAT beats the "details"⊃"tails" false positive.
+- Mutation check: with the old step 4 (BOOTX64 first, substring only), the Parrot and
+  "details" tests fail. The Ubuntu test passes, as it did before.
+
+Ran:
+- Host tests **137 passed, 0 failed** (was 127). pytest 14 passed. UEFI build clean.
+- `./manage.py smoke` 6/6.
+- `./manage.py iso-test --no-ui <Ubuntu 26.04.1, Parrot 7.3>`: 2/2 on 4 of 5 runs. The
+  first run after the build scored 0/2. Its output was not kept, so the cause is unknown.
+  Two stray QEMU processes from earlier manual monitor tests were still running at the
+  time (killed). The 3 runs after that all passed.
+- Serial with both ISOs:
+  ```
+  myboot: discovered 2 entr(y/ies), 2 bootable
+  myboot:   'Parrot OS' loader=Some("\\EFI\\BOOT\\BOOTX64.EFI") health=Healthy
+  myboot:   'Ubuntu' loader=Some("\\EFI\\BOOT\\BOOTX64.EFI") health=Healthy
+  ```
+  The MyBoot menu screenshot shows "Parrot OS" and "Ubuntu". The default handoff still
+  reaches Parrot's GRUB.
+
+Observed, not changed: the staged ESP's config writes `timeout_secs = 20`, but
+`config::schema` reads the key `timeout`, so the ISO menu auto-boots after the default 5 s
+(the screenshot shows "auto-boot 1s"). The key names in `pyboot/esp.py` and the schema
+disagree.

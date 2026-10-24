@@ -3,6 +3,8 @@
 //! load or relocate it (the firmware LoadImage does that).
 use crate::bytes::{self, OutOfBounds};
 
+pub mod section;
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct PeError;
 impl From<OutOfBounds> for PeError { fn from(_: OutOfBounds) -> Self { PeError } }
