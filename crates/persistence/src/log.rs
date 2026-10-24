@@ -56,18 +56,18 @@ pub fn parse(data: &[u8]) -> Vec<(u64, String, String, String)> {
     let mut out = Vec::new();
     for line in text.lines() {
         let mut it = line.splitn(4, '\t');
-        match (it.next(), it.next(), it.next(), it.next()) {
-            (Some(seq), Some(entry), Some(phase), Some(result)) => {
-                if let Ok(n) = seq.parse::<u64>() {
-                    out.push((
-                        n,
-                        String::from(entry),
-                        String::from(phase),
-                        String::from(result),
-                    ));
-                }
+        // A line without all four fields is malformed and skipped.
+        if let (Some(seq), Some(entry), Some(phase), Some(result)) =
+            (it.next(), it.next(), it.next(), it.next())
+        {
+            if let Ok(n) = seq.parse::<u64>() {
+                out.push((
+                    n,
+                    String::from(entry),
+                    String::from(phase),
+                    String::from(result),
+                ));
             }
-            _ => {} // skip malformed line
         }
     }
     out

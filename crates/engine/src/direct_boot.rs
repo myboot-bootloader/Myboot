@@ -121,7 +121,7 @@ fn read_setup_header(kernel: &[u8]) -> Option<SetupHeader> {
 
 /// Allocate whole pages covering `bytes` and return the physical base address.
 fn alloc_pages_for(bytes: usize) -> Result<u64, EngineError> {
-    let pages = (bytes + 0xfff) / 0x1000;
+    let pages = bytes.div_ceil(0x1000);
     boot::allocate_pages(
         AllocateType::AnyPages,
         MemoryType::LOADER_DATA,

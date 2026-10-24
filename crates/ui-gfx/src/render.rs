@@ -349,11 +349,7 @@ fn kv(canvas: &mut dyn Canvas, kx: usize, vx: usize, y: usize, k: &str, v: &str)
 /// How many glyphs fit in `w` pixels at `scale`.
 fn fit_chars(w: usize, scale: usize) -> usize {
     let adv = (font::GLYPH_W + 1) * scale;
-    if adv == 0 {
-        0
-    } else {
-        w / adv
-    }
+    w.checked_div(adv).unwrap_or(0)
 }
 
 /// Truncate `s` to at most `max` chars, adding an ellipsis when cut.

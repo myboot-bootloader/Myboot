@@ -137,9 +137,12 @@ fn media_name<F: FileStore + ?Sized>(fs: &F) -> Option<alloc::string::String> {
 /// a BOM).
 fn decode_text(bytes: &[u8]) -> Option<alloc::string::String> {
     if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
+        // `as_chunks` yields only whole 2-byte units; an odd tail is dropped.
         let u16s: alloc::vec::Vec<u16> = bytes[2..]
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
             .collect();
         return Some(alloc::string::String::from_utf16_lossy(&u16s));
     }

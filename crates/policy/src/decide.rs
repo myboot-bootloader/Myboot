@@ -65,7 +65,8 @@ pub fn decide(graph: &BootGraph, history: &History, strategy: Strategy) -> Optio
 /// Deterministic: healthiest, then by canonical graph order.
 pub fn ranked_candidates(graph: &BootGraph) -> Vec<EntryId> {
     let mut v: Vec<&BootEntry> = graph.bootable().collect();
-    v.sort_by(|a, b| b.health.rank().cmp(&a.health.rank()));
+    // Stable sort, highest rank first; ties keep canonical graph order.
+    v.sort_by_key(|e| core::cmp::Reverse(e.health.rank()));
     v.into_iter().map(|e| e.id.clone()).collect()
 }
 

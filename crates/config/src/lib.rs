@@ -5,7 +5,7 @@
 //!   * `toml`      — a small, panic-free TOML-subset reader (no external crate).
 //!   * `schema`    — the typed configuration model + validation.
 //!   * `reconcile` — diff desired-vs-actual firmware state and produce a
-//!                   reversible repair plan (with a snapshot for rollback).
+//!     reversible repair plan (with a snapshot for rollback).
 //!
 //! Pure and firmware-independent: it plans against the `VarStore` port, so the
 //! whole thing is host-tested with a mock. The actual `SetVariable` happens in

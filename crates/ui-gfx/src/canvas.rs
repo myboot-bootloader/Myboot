@@ -53,6 +53,9 @@ pub trait Canvas {
     }
 
     /// A filled "card": rounded look via 2px clipped corners, fill + border.
+    // Geometry + two colours + border width are the natural parameters of this
+    // primitive; bundling them would only move the same 8 values into a struct.
+    #[allow(clippy::too_many_arguments)]
     fn card(&mut self, x: usize, y: usize, w: usize, h: usize, fill: Rgb, border: Rgb, bt: usize) {
         self.fill_rect(x, y, w, h, fill);
         self.stroke_rect(x, y, w, h, border, bt);

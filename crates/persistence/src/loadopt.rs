@@ -111,8 +111,11 @@ pub fn encode_boot_order(order: &[u16]) -> Vec<u8> {
 
 /// Decode a `BootOrder` variable. Total; a trailing odd byte is ignored.
 pub fn decode_boot_order(buf: &[u8]) -> Vec<u16> {
-    buf.chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+    // `as_chunks` yields only whole 2-byte chunks; the odd tail is the remainder.
+    buf.as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_le_bytes(*c))
         .collect()
 }
 
