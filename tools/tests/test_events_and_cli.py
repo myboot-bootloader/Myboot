@@ -21,7 +21,7 @@ def test_cli_parser_has_all_commands():
     # every subcommand must parse and carry a handler
     for cmd, extra in [
         (["test"], {}), (["build"], {}), (["smoke"], {}),
-        (["iso-test", "/tmp/x.iso"], {}), (["check"], {}), (["verify"], {}),
+        (["iso-test", "/tmp/x.iso"], {}), (["bench"], {}), (["check"], {}), (["verify"], {}),
         (["install"], {}), (["uninstall"], {}), (["usb", "--device", "/dev/sdz"], {}),
     ]:
         ns = p.parse_args(cmd)
@@ -35,3 +35,13 @@ def test_cli_requires_a_command():
         assert False, "a command should be required"
     except SystemExit:
         pass
+
+
+def test_bench_median_by_stage_keeps_order():
+    from pyboot.bench import median_by_stage
+    runs = [
+        [ev.Timing("connect", 10, 10), ev.Timing("discovery", 100, 110)],
+        [ev.Timing("connect", 30, 30), ev.Timing("discovery", 300, 330)],
+        [ev.Timing("connect", 20, 20), ev.Timing("discovery", 200, 220)],
+    ]
+    assert median_by_stage(runs) == [ev.Timing("connect", 20, 20), ev.Timing("discovery", 200, 220)]

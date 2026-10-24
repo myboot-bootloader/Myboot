@@ -29,10 +29,16 @@ pub enum EngineError {
 /// Run the whole pipeline. See the module list in `lib.rs` for the nine stages.
 pub fn run() -> Result<core::convert::Infallible, EngineError> {
     let mut vars = UefiVarStore::new();
+    // Stage timing (no-op unless built with the `boot-timing` feature).
+    let mut clock = crate::timing::StageClock::start();
     // Fan out across EVERY filesystem the firmware knows (all disks/ESPs), like
     // rEFInd — not just the volume we booted from. The existing discovery/health
     // code is unchanged; it now sees the whole machine through this one store.
-    let fs = platform::MultiVolume::discover();
+    // Connect and enumerate are separate calls so each gets its own timing lap.
+    platform::volume::connect_all_controllers();
+    clock.lap("connect");
+    let fs = platform::MultiVolume::enumerate();
+    clock.lap("enumerate");
     log::info!("myboot: scanning {} volume(s)", fs.len());
 
     // (1) persisted state + pending marker
@@ -48,15 +54,20 @@ pub fn run() -> Result<core::convert::Infallible, EngineError> {
         let boot = vfs.list_dir("\\EFI\\BOOT").ok()
             .map(|v| v.join(",")).unwrap_or_default();
         log::info!("myboot: vol {vid} label='{label}' \\EFI\\BOOT=[{boot}]");
-        let strings = discovery::esp::loader_string_sample(*vfs);
-        if !strings.is_empty() {
-            log::info!("myboot: vol {vid} loader-strings: {strings}");
-        }
     }
+    clock.lap("diagnostics");
     let mut graph = discovery::discover_multi(&vars, &targets);
+    clock.lap("discovery");
 
-    // (3) assess health over the graph (files present on any volume)
-    health::assess_all(&mut graph, &fs);
+    // (3) assess health over the graph, each entry against the volume it was
+    //     discovered on (so a file present only on ANOTHER disk does not make it
+    //     healthy). Firmware-variable entries (no volume) check every volume.
+    let any_volume: &dyn FileStore = &fs;
+    health::assess_all_scoped(&mut graph, |vol| {
+        vol.and_then(|v| targets.iter().find(|(id, _)| id.as_str() == v).map(|(_, s)| *s))
+            .unwrap_or(any_volume)
+    });
+    clock.lap("health");
 
     // (3b) SELF-EXCLUSION: drop MyBoot's OWN loader so it never offers to boot
     //      itself. MyBoot is booted from the removable fallback path
@@ -108,6 +119,8 @@ pub fn run() -> Result<core::convert::Infallible, EngineError> {
     let history = build_history(&vars, &cfg);
     let strategy = map_strategy(&cfg);
     let decision = policy::decide(&graph, &history, strategy);
+
+    clock.lap("to-menu");
 
     // (7) present the menu and get the user's (or timeout's) choice, plus an
     //     optional edited kernel command line (the "E" hotkey).

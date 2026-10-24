@@ -9,6 +9,7 @@ from typing import List
 
 from . import console
 from .assertions import Check
+from .events import Timing
 
 
 def render(title: str, checks: List[Check]) -> bool:
@@ -23,3 +24,14 @@ def render(title: str, checks: List[Check]) -> bool:
         return True
     console.error(f"{title}: {passed}/{total} checks passed")
     return False
+
+
+def render_timings(title: str, timings: List[Timing]) -> None:
+    """Print one row per boot stage: its own duration and the running total."""
+    console.section(title)
+    if not timings:
+        console.warn("no timing lines captured (was the build made with boot-timing?)")
+        return
+    width = max(len(t.stage) for t in timings)
+    for t in timings:
+        console.info(f"{t.stage:<{width}}  {t.us / 1000:>10.1f} ms   total {t.total_us / 1000:>10.1f} ms")

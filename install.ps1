@@ -75,9 +75,13 @@ if (-not $isAdmin) {
 }
 
 # --- 2. preflight: UEFI + Secure Boot -----------------------------------------
-# PEFirmwareType: 1 = legacy BIOS, 2 = UEFI (the value GetFirmwareType() reads).
-$fwType = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control' -Name PEFirmwareType -ErrorAction SilentlyContinue).PEFirmwareType
-if ($fwType -ne 2) { Die "not a UEFI system (PEFirmwareType=$fwType); MyBoot is UEFI-only." }
+# Get-ComputerInfo wraps the Win32 GetFirmwareType() API (Windows 8+), which works on a
+# full Windows install. The PEFirmwareType registry value is documented only for WinPE
+# and is absent on normal Windows, so it must not be used here.
+$firmwareType = (Get-ComputerInfo -Property BiosFirmwareType).BiosFirmwareType
+if ($firmwareType -ne 'Uefi') {
+    Die "not a UEFI system (BiosFirmwareType=$firmwareType); MyBoot is UEFI-only."
+}
 
 try {
     if (Confirm-SecureBootUEFI) {

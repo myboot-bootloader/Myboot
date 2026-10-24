@@ -110,7 +110,33 @@ tests could not. Two fixes, both verified:
 
 Total host tests: **105**, 0 failures.
 
+## Boot-time scan performance (Challenge 1, Phase A — 2026-10-24)
+
+Full details and numbers are in `TESTLOG.md`.
+
+- **Stage timing:** `--features engine/boot-timing` logs
+  `myboot: timing <stage> <us>us total=<us>us`. `./manage.py bench` runs it in QEMU,
+  optionally with a NixOS-shaped fixture (`--generations N --kernels K`).
+- **Discovery no longer reads whole files to inspect headers.**
+  - `refine` reads only the PE header, once per distinct kernel.
+  - `bootspec` skips files.
+  - The whole-loader diagnostic read is gone.
+- **Health checks each entry against its own volume**, which fixes a cross-disk false
+  "Healthy". `Volume` ids are computed once (byte-identical). `write_in` truncates.
+- **QEMU results, 100 BLS generations:** discovery 135 s → 263 ms, entry set identical.
+  Host tests: **127**, 0 failures. Smoke: 6/6.
+- **Not done:**
+  - Phase B (the discovery cache) is waiting on real-hardware timing.
+  - A7 (narrowing controller connect) and A8 (BootOrder-only variable scan) were skipped
+    by decision.
+
 ## Real-OS chainload testing
+
+**ISO test PROVEN on QEMU/OVMF (2026-10-24).** Under MyBoot, the Ubuntu 26.04.1 server ISO
+booted to its installer and the Parrot 7.3 ISO booted to its live desktop. In both cases
+the ISO's loader was chainloaded by device path from the ISO's own volume and found its
+own GRUB config, kernel and initrd. Real hardware, installed OSes and Secure Boot are
+still unproven. Details are in `TESTLOG.md`.
 
 the `./manage.py smoke` command picks a real, different EFI application to chainload as the
 "Ubuntu" entry (proving a genuine handoff, not the self-recursion): it uses

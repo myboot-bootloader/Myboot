@@ -59,3 +59,9 @@ def test_none_loader_entry():
     line = "[ INFO]: myboot:   'UEFI QEMU HARDDISK' loader=None health=Healthy"
     e = logparse.parse_line(line)
     assert isinstance(e, ev.Entry) and e.loader is None
+
+
+def test_timing_line():
+    line = "[ INFO]: crates/engine/src/timing.rs@028: myboot: timing discovery 1234us total=5678us"
+    e = logparse.parse_line(line)
+    assert e == ev.Timing(stage="discovery", us=1234, total_us=5678)

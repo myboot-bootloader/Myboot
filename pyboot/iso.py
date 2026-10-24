@@ -49,7 +49,9 @@ def run(env: Env, iso_paths: List[str], *, ui: bool = True, timeout: int = 120) 
 
     console.step(f"attaching {len(isos)} ISO(s) (headless discovery check): {names}")
     result = qemu.run(env, staged.root, timeout=timeout, isos=isos,
-                      stop_on=[r"discovered \d+ entr", r"no candidate could be booted"])
+                      # Match the WHOLE line: pexpect stops capturing at the end of
+                      # the match, and logparse needs "... N bootable" to parse it.
+                      stop_on=[r"discovered \d+ entr\S* \d+ bootable", r"no candidate could be booted"])
     events = logparse.parse(result.output)
     checks = [
         A.scanned_at_least(events, 1 + len(isos)),      # boot ESP + each ISO

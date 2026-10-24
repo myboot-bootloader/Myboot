@@ -21,5 +21,6 @@ extern crate alloc;
 mod canvas_impl;
 mod direct_boot;
 mod pipeline;
+mod timing;
 
 pub use pipeline::run;

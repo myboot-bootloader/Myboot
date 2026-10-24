@@ -22,3 +22,8 @@ ui-shell = { path = "../ui-shell" }
 security = { path = "../security" }
 platform = { path = "../platform" }
 arch = { path = "../arch" }
+
+[features]
+# Log per-stage boot timings over serial (`myboot: timing <stage> <us>us total=<us>us`).
+# Off by default: calibration costs a 10 ms stall. See engine/src/timing.rs.
+boot-timing = []

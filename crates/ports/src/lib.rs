@@ -11,9 +11,11 @@
 extern crate alloc;
 
 mod error;
+mod meta;
 mod traits;
 
 pub use error::{VarNamespace, IoError, IoResult};
+pub use meta::DirEntryMeta;
 pub use traits::{VarStore, FileStore};
 
 #[cfg(any(test, feature = "mock"))]
@@ -59,5 +61,28 @@ mod tests {
         fs.append("\\EFI\\MyBoot\\log", b"b").unwrap();
         assert_eq!(fs.read("\\EFI\\MyBoot\\log").unwrap(), b"ab".to_vec());
         assert!(fs.exists("\\EFI\\MyBoot\\log"));
+    }
+
+    #[test]
+    fn file_store_read_head_truncates_and_reports_missing() {
+        let fs = MockFileStore::new().with_file("\\k", b"MZ0123456789");
+        assert_eq!(fs.read_head("\\k", 2).unwrap(), b"MZ".to_vec());
+        assert_eq!(fs.read_head("\\k", 999).unwrap(), b"MZ0123456789".to_vec());
+        assert_eq!(fs.read_head("\\nope", 4), Err(IoError::NotFound));
+    }
+
+    #[test]
+    fn file_store_list_dir_meta_reports_files_and_dirs() {
+        let fs = MockFileStore::new()
+            .with_file("\\EFI\\nixos\\k.efi", b"12345")
+            .with_file("\\EFI\\nixos\\gen-1\\boot.json", b"{}")
+            .with_mtime("\\EFI\\nixos\\k.efi", 42);
+        let mut items = fs.list_dir_meta("\\EFI\\nixos").unwrap();
+        items.sort_by(|a, b| a.name.cmp(&b.name));
+        assert_eq!(items, alloc::vec![
+            DirEntryMeta { name: "gen-1".to_string(), size: 0, modified: 0, is_dir: true },
+            DirEntryMeta { name: "k.efi".to_string(), size: 5, modified: 42, is_dir: false },
+        ]);
+        assert_eq!(fs.list_dir_meta("\\nope"), Err(IoError::NotFound));
     }
 }

@@ -28,6 +28,7 @@ _NO_PLAN = re.compile(r"myboot: no launch plan for '(.+?)'")
 _NO_CAND = re.compile(r"myboot: no candidate could be booted \((\d+) tried\)")
 _GOP = re.compile(r"myboot: GOP unavailable \((.+?)\)")
 _ENGINE_ERR = re.compile(r"myboot: engine could not hand off: (.+?)\s*$")
+_TIMING = re.compile(r"myboot: timing (\S+) (\d+)us total=(\d+)us")
 
 
 def parse_line(line: str):
@@ -76,6 +77,10 @@ def parse_line(line: str):
     m = _ENGINE_ERR.search(line)
     if m:
         return ev.EngineError(error=m.group(1))
+
+    m = _TIMING.search(line)
+    if m:
+        return ev.Timing(stage=m.group(1), us=int(m.group(2)), total_us=int(m.group(3)))
 
     return None
 
