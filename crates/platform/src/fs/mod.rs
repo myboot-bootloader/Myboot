@@ -10,21 +10,30 @@
 extern crate alloc;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use uefi::boot;
-use uefi::proto::media::file::{File, FileAttribute, FileInfo, FileMode, FileType, Directory};
-use uefi::{CString16, Status};
 use ports::{DirEntryMeta, FileStore, IoError, IoResult};
+use uefi::boot;
+use uefi::proto::media::file::{Directory, File, FileAttribute, FileInfo, FileMode, FileType};
+use uefi::{CString16, Status};
 
 /// Zero-sized, stateless adapter over the loaded image's ESP volume.
 pub struct UefiFileStore;
 
 impl UefiFileStore {
-    pub fn new() -> Self { UefiFileStore }
+    pub fn new() -> Self {
+        UefiFileStore
+    }
 }
-impl Default for UefiFileStore { fn default() -> Self { Self::new() } }
+impl Default for UefiFileStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 pub(crate) fn to_cpath(path: &str) -> Result<CString16, IoError> {
-    let norm: String = path.chars().map(|c| if c == '/' { '\\' } else { c }).collect();
+    let norm: String = path
+        .chars()
+        .map(|c| if c == '/' { '\\' } else { c })
+        .collect();
     CString16::try_from(norm.as_str()).map_err(|_| IoError::Other("bad path".to_string()))
 }
 
@@ -40,8 +49,8 @@ pub(crate) fn map_err(s: Status) -> IoError {
 
 /// Open the loaded image's ESP volume root (fresh each call — see module note).
 fn open_image_root() -> IoResult<Directory> {
-    let mut sfs = boot::get_image_file_system(boot::image_handle())
-        .map_err(|e| map_err(e.status()))?;
+    let mut sfs =
+        boot::get_image_file_system(boot::image_handle()).map_err(|e| map_err(e.status()))?;
     sfs.open_volume().map_err(|e| map_err(e.status()))
 }
 
@@ -49,11 +58,14 @@ fn open_image_root() -> IoResult<Directory> {
 
 pub(crate) fn read_in(root: &mut Directory, path: &str) -> IoResult<Vec<u8>> {
     let cpath = to_cpath(path)?;
-    let handle = root.open(&cpath, FileMode::Read, FileAttribute::empty())
+    let handle = root
+        .open(&cpath, FileMode::Read, FileAttribute::empty())
         .map_err(|e| map_err(e.status()))?;
     match handle.into_type().map_err(|e| map_err(e.status()))? {
         FileType::Regular(mut f) => {
-            let info = f.get_boxed_info::<FileInfo>().map_err(|e| map_err(e.status()))?;
+            let info = f
+                .get_boxed_info::<FileInfo>()
+                .map_err(|e| map_err(e.status()))?;
             let size = info.file_size() as usize;
             let mut data = alloc::vec![0u8; size];
             let n = f.read(&mut data).map_err(|e| map_err(e.status()))?;
@@ -68,15 +80,20 @@ pub(crate) fn read_in(root: &mut Directory, path: &str) -> IoResult<Vec<u8>> {
 /// `RegularFile::read` loop; uefi 0.33 `read` may return fewer bytes than asked).
 pub(crate) fn read_head_in(root: &mut Directory, path: &str, max_len: usize) -> IoResult<Vec<u8>> {
     let cpath = to_cpath(path)?;
-    let handle = root.open(&cpath, FileMode::Read, FileAttribute::empty())
+    let handle = root
+        .open(&cpath, FileMode::Read, FileAttribute::empty())
         .map_err(|e| map_err(e.status()))?;
     match handle.into_type().map_err(|e| map_err(e.status()))? {
         FileType::Regular(mut f) => {
             let mut data = alloc::vec![0u8; max_len];
             let mut filled = 0;
             while filled < max_len {
-                let n = f.read(&mut data[filled..]).map_err(|e| map_err(e.status()))?;
-                if n == 0 { break; }
+                let n = f
+                    .read(&mut data[filled..])
+                    .map_err(|e| map_err(e.status()))?;
+                if n == 0 {
+                    break;
+                }
                 filled += n;
             }
             data.truncate(filled);
@@ -86,7 +103,12 @@ pub(crate) fn read_head_in(root: &mut Directory, path: &str, max_len: usize) -> 
     }
 }
 
-pub(crate) fn write_in(root: &mut Directory, path: &str, data: &[u8], append: bool) -> IoResult<()> {
+pub(crate) fn write_in(
+    root: &mut Directory,
+    path: &str,
+    data: &[u8],
+    append: bool,
+) -> IoResult<()> {
     let cpath = to_cpath(path)?;
     if !append {
         // CreateReadWrite opens an existing file WITHOUT truncating it, so a
@@ -100,13 +122,17 @@ pub(crate) fn write_in(root: &mut Directory, path: &str, data: &[u8], append: bo
             }
         }
     }
-    let handle = root.open(&cpath, FileMode::CreateReadWrite, FileAttribute::empty())
+    let handle = root
+        .open(&cpath, FileMode::CreateReadWrite, FileAttribute::empty())
         .map_err(|e| map_err(e.status()))?;
     match handle.into_type().map_err(|e| map_err(e.status()))? {
         FileType::Regular(mut f) => {
             if append {
-                let info = f.get_boxed_info::<FileInfo>().map_err(|e| map_err(e.status()))?;
-                f.set_position(info.file_size()).map_err(|e| map_err(e.status()))?;
+                let info = f
+                    .get_boxed_info::<FileInfo>()
+                    .map_err(|e| map_err(e.status()))?;
+                f.set_position(info.file_size())
+                    .map_err(|e| map_err(e.status()))?;
             }
             f.write(data).map_err(|_| IoError::DeviceError)?;
             f.flush().map_err(|e| map_err(e.status()))?;
@@ -118,7 +144,9 @@ pub(crate) fn write_in(root: &mut Directory, path: &str, data: &[u8], append: bo
 
 pub(crate) fn exists_in(root: &mut Directory, path: &str) -> bool {
     match to_cpath(path) {
-        Ok(cpath) => root.open(&cpath, FileMode::Read, FileAttribute::empty()).is_ok(),
+        Ok(cpath) => root
+            .open(&cpath, FileMode::Read, FileAttribute::empty())
+            .is_ok(),
         _ => false,
     }
 }
@@ -128,7 +156,8 @@ pub(crate) fn exists_in(root: &mut Directory, path: &str) -> bool {
 /// `is_directory()` and `file_name()`.
 pub(crate) fn list_dir_meta_in(root: &mut Directory, path: &str) -> IoResult<Vec<DirEntryMeta>> {
     let cpath = to_cpath(path)?;
-    let handle = root.open(&cpath, FileMode::Read, FileAttribute::empty())
+    let handle = root
+        .open(&cpath, FileMode::Read, FileAttribute::empty())
         .map_err(|e| map_err(e.status()))?;
     let mut dir = match handle.into_type().map_err(|e| map_err(e.status()))? {
         FileType::Dir(d) => d,
@@ -140,18 +169,29 @@ pub(crate) fn list_dir_meta_in(root: &mut Directory, path: &str) -> IoResult<Vec
         match dir.read_entry(&mut buf) {
             Ok(Some(info)) => {
                 let name = info.file_name().to_string();
-                if name == "." || name == ".." { continue; }
+                if name == "." || name == ".." {
+                    continue;
+                }
                 let t = info.modification_time();
-                let modified = ((t.year() as u64) << 40) | ((t.month() as u64) << 32)
-                    | ((t.day() as u64) << 24) | ((t.hour() as u64) << 16)
-                    | ((t.minute() as u64) << 8) | (t.second() as u64);
+                let modified = ((t.year() as u64) << 40)
+                    | ((t.month() as u64) << 32)
+                    | ((t.day() as u64) << 24)
+                    | ((t.hour() as u64) << 16)
+                    | ((t.minute() as u64) << 8)
+                    | (t.second() as u64);
                 out.push(DirEntryMeta {
-                    name, size: info.file_size(), modified, is_dir: info.is_directory(),
+                    name,
+                    size: info.file_size(),
+                    modified,
+                    is_dir: info.is_directory(),
                 });
             }
             Ok(None) => break,
             Err(e) => {
-                if e.status() == Status::BUFFER_TOO_SMALL { buf.resize(buf.len() * 2, 0); continue; }
+                if e.status() == Status::BUFFER_TOO_SMALL {
+                    buf.resize(buf.len() * 2, 0);
+                    continue;
+                }
                 return Err(map_err(e.status()));
             }
         }
@@ -160,17 +200,31 @@ pub(crate) fn list_dir_meta_in(root: &mut Directory, path: &str) -> IoResult<Vec
 }
 
 pub(crate) fn list_dir_in(root: &mut Directory, path: &str) -> IoResult<Vec<String>> {
-    Ok(list_dir_meta_in(root, path)?.into_iter().map(|m| m.name).collect())
+    Ok(list_dir_meta_in(root, path)?
+        .into_iter()
+        .map(|m| m.name)
+        .collect())
 }
 
 impl FileStore for UefiFileStore {
-    fn read(&self, path: &str) -> IoResult<Vec<u8>> { read_in(&mut open_image_root()?, path) }
-    fn write(&mut self, path: &str, data: &[u8]) -> IoResult<()> { write_in(&mut open_image_root()?, path, data, false) }
-    fn append(&mut self, path: &str, data: &[u8]) -> IoResult<()> { write_in(&mut open_image_root()?, path, data, true) }
-    fn exists(&self, path: &str) -> bool {
-        match open_image_root() { Ok(mut r) => exists_in(&mut r, path), Err(_) => false }
+    fn read(&self, path: &str) -> IoResult<Vec<u8>> {
+        read_in(&mut open_image_root()?, path)
     }
-    fn list_dir(&self, path: &str) -> IoResult<Vec<String>> { list_dir_in(&mut open_image_root()?, path) }
+    fn write(&mut self, path: &str, data: &[u8]) -> IoResult<()> {
+        write_in(&mut open_image_root()?, path, data, false)
+    }
+    fn append(&mut self, path: &str, data: &[u8]) -> IoResult<()> {
+        write_in(&mut open_image_root()?, path, data, true)
+    }
+    fn exists(&self, path: &str) -> bool {
+        match open_image_root() {
+            Ok(mut r) => exists_in(&mut r, path),
+            Err(_) => false,
+        }
+    }
+    fn list_dir(&self, path: &str) -> IoResult<Vec<String>> {
+        list_dir_in(&mut open_image_root()?, path)
+    }
     fn read_head(&self, path: &str, max_len: usize) -> IoResult<Vec<u8>> {
         read_head_in(&mut open_image_root()?, path, max_len)
     }

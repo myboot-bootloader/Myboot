@@ -12,7 +12,7 @@
 extern crate alloc;
 
 use alloc::format;
-use graph::{BootGraph, BootEntry, Health, Reason, BootResult};
+use graph::{BootEntry, BootGraph, BootResult, Health, Reason};
 use ports::FileStore;
 
 /// Validate every entry in the graph against the filesystem and its last result,
@@ -26,7 +26,9 @@ pub fn assess_all<F: FileStore>(graph: &mut BootGraph, fs: &F) {
             let entry = graph.find(&id).expect("id came from the graph");
             assess_entry(entry, fs)
         };
-        if let Some(e) = graph.find_mut(&id) { e.health = health; }
+        if let Some(e) = graph.find_mut(&id) {
+            e.health = health;
+        }
     }
 }
 
@@ -45,7 +47,9 @@ where
             let entry = graph.find(&id).expect("id came from the graph");
             assess_entry(entry, resolve(entry.volume.as_deref()))
         };
-        if let Some(e) = graph.find_mut(&id) { e.health = health; }
+        if let Some(e) = graph.find_mut(&id) {
+            e.health = health;
+        }
     }
 }
 
@@ -84,12 +88,20 @@ pub fn assess_entry<F: FileStore + ?Sized>(entry: &BootEntry, fs: &F) -> Health 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use graph::{BootGraph, DiskNode, DiskId, OsNode, OsKind, EntryRole, BootMethod, BootEntry, EfiPath, Health, BootResult};
-    use ports::mock::MockFileStore;
     use alloc::string::ToString;
+    use graph::{
+        BootEntry, BootGraph, BootMethod, BootResult, DiskId, DiskNode, EfiPath, EntryRole, Health,
+        OsKind, OsNode,
+    };
+    use ports::mock::MockFileStore;
 
     fn win_entry() -> BootEntry {
-        let mut e = BootEntry::new(OsKind::Windows, "Windows 11", EntryRole::Default, BootMethod::WindowsBootManager);
+        let mut e = BootEntry::new(
+            OsKind::Windows,
+            "Windows 11",
+            EntryRole::Default,
+            BootMethod::WindowsBootManager,
+        );
         e.loader = Some(EfiPath("\\EFI\\Microsoft\\Boot\\bootmgfw.efi".to_string()));
         e
     }
@@ -121,9 +133,13 @@ mod tests {
 
     #[test]
     fn missing_initrd_is_degraded_not_unbootable() {
-        let fs = MockFileStore::new()
-            .with_file("\\EFI\\nixos\\kernel.efi", b"MZ"); // kernel present, initrd absent
-        let mut e = BootEntry::new(OsKind::NixOs, "gen", EntryRole::Generation(1), BootMethod::LinuxDirect);
+        let fs = MockFileStore::new().with_file("\\EFI\\nixos\\kernel.efi", b"MZ"); // kernel present, initrd absent
+        let mut e = BootEntry::new(
+            OsKind::NixOs,
+            "gen",
+            EntryRole::Generation(1),
+            BootMethod::LinuxDirect,
+        );
         e.kernel = Some(EfiPath("\\EFI\\nixos\\kernel.efi".to_string()));
         e.initrd = Some(EfiPath("\\EFI\\nixos\\initrd".to_string()));
         let h = assess_entry(&e, &fs);
@@ -136,7 +152,11 @@ mod tests {
         let mut g = BootGraph::new();
         let mut os = OsNode::new(OsKind::Windows, "Windows");
         os.push(win_entry());
-        g.add_disk(DiskNode { id: DiskId(0), label: "d".to_string(), systems: alloc::vec![os] });
+        g.add_disk(DiskNode {
+            id: DiskId(0),
+            label: "d".to_string(),
+            systems: alloc::vec![os],
+        });
         assess_all(&mut g, &fs);
         assert_eq!(g.entries().next().unwrap().health, Health::Healthy);
     }
@@ -145,7 +165,11 @@ mod tests {
         let mut os = OsNode::new(OsKind::NixOs, "NixOS");
         os.push(e);
         let mut g = BootGraph::new();
-        g.add_disk(DiskNode { id: DiskId(0), label: "system".to_string(), systems: alloc::vec![os] });
+        g.add_disk(DiskNode {
+            id: DiskId(0),
+            label: "system".to_string(),
+            systems: alloc::vec![os],
+        });
         g
     }
 
@@ -155,7 +179,12 @@ mod tests {
         // against "any volume" this was Healthy; scoped, it is Unbootable.
         let vol_a = MockFileStore::new().with_file("\\loader\\entries\\a.conf", b"x");
         let vol_b = MockFileStore::new().with_file("\\EFI\\nixos\\k.efi", b"MZ");
-        let mut e = BootEntry::new(OsKind::NixOs, "gen 5", EntryRole::Generation(5), BootMethod::NixGeneration);
+        let mut e = BootEntry::new(
+            OsKind::NixOs,
+            "gen 5",
+            EntryRole::Generation(5),
+            BootMethod::NixGeneration,
+        );
         e.kernel = Some(EfiPath("\\EFI\\nixos\\k.efi".to_string()));
         e.volume = Some("volA".to_string());
         let mut g = one_entry_graph(e);
@@ -165,7 +194,10 @@ mod tests {
             Some("volB") => &vol_b as &dyn FileStore,
             _ => any,
         });
-        assert!(matches!(g.entries().next().unwrap().health, Health::Unbootable(_)));
+        assert!(matches!(
+            g.entries().next().unwrap().health,
+            Health::Unbootable(_)
+        ));
     }
 
     #[test]

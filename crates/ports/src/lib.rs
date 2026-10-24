@@ -14,31 +14,44 @@ mod error;
 mod meta;
 mod traits;
 
-pub use error::{VarNamespace, IoError, IoResult};
+pub use error::{IoError, IoResult, VarNamespace};
 pub use meta::DirEntryMeta;
-pub use traits::{VarStore, FileStore};
+pub use traits::{FileStore, VarStore};
 
 #[cfg(any(test, feature = "mock"))]
 pub mod mock;
 
 #[cfg(test)]
 mod tests {
+    use super::mock::{MockFileStore, MockVarStore};
     use super::*;
-    use super::mock::{MockVarStore, MockFileStore};
     extern crate alloc;
     use alloc::string::ToString;
 
     #[test]
     fn var_store_roundtrip_and_namespaces_are_isolated() {
         let mut vs = MockVarStore::new();
-        vs.set(VarNamespace::Global, "BootOrder", &[0, 0, 1, 0]).unwrap();
+        vs.set(VarNamespace::Global, "BootOrder", &[0, 0, 1, 0])
+            .unwrap();
         vs.set(VarNamespace::Vendor, "state", &[42]).unwrap();
-        assert_eq!(vs.get(VarNamespace::Global, "BootOrder").unwrap(), [0u8,0,1,0].to_vec());
-        assert_eq!(vs.get(VarNamespace::Global, "state"), Err(IoError::NotFound));
-        assert_eq!(vs.get(VarNamespace::Vendor, "state").unwrap(), [42u8].to_vec());
+        assert_eq!(
+            vs.get(VarNamespace::Global, "BootOrder").unwrap(),
+            [0u8, 0, 1, 0].to_vec()
+        );
+        assert_eq!(
+            vs.get(VarNamespace::Global, "state"),
+            Err(IoError::NotFound)
+        );
+        assert_eq!(
+            vs.get(VarNamespace::Vendor, "state").unwrap(),
+            [42u8].to_vec()
+        );
         vs.delete(VarNamespace::Vendor, "state").unwrap();
         vs.delete(VarNamespace::Vendor, "state").unwrap(); // idempotent
-        assert_eq!(vs.get(VarNamespace::Vendor, "state"), Err(IoError::NotFound));
+        assert_eq!(
+            vs.get(VarNamespace::Vendor, "state"),
+            Err(IoError::NotFound)
+        );
     }
 
     #[test]
@@ -49,7 +62,14 @@ mod tests {
             .with_file("\\loader\\entries\\sub\\c.conf", b"z");
         let mut names = fs.list_dir("\\loader\\entries").unwrap();
         names.sort();
-        assert_eq!(names, alloc::vec!["a.conf".to_string(), "b.conf".to_string(), "sub".to_string()]);
+        assert_eq!(
+            names,
+            alloc::vec![
+                "a.conf".to_string(),
+                "b.conf".to_string(),
+                "sub".to_string()
+            ]
+        );
         assert_eq!(fs.list_dir("\\nope"), Err(IoError::NotFound));
     }
 
@@ -79,10 +99,23 @@ mod tests {
             .with_mtime("\\EFI\\nixos\\k.efi", 42);
         let mut items = fs.list_dir_meta("\\EFI\\nixos").unwrap();
         items.sort_by(|a, b| a.name.cmp(&b.name));
-        assert_eq!(items, alloc::vec![
-            DirEntryMeta { name: "gen-1".to_string(), size: 0, modified: 0, is_dir: true },
-            DirEntryMeta { name: "k.efi".to_string(), size: 5, modified: 42, is_dir: false },
-        ]);
+        assert_eq!(
+            items,
+            alloc::vec![
+                DirEntryMeta {
+                    name: "gen-1".to_string(),
+                    size: 0,
+                    modified: 0,
+                    is_dir: true
+                },
+                DirEntryMeta {
+                    name: "k.efi".to_string(),
+                    size: 5,
+                    modified: 42,
+                    is_dir: false
+                },
+            ]
+        );
         assert_eq!(fs.list_dir_meta("\\nope"), Err(IoError::NotFound));
     }
 }

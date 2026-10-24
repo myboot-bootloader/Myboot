@@ -27,7 +27,9 @@ impl SecureBootState {
         }
     }
 
-    pub fn is_enforcing(self) -> bool { matches!(self, SecureBootState::Enabled) }
+    pub fn is_enforcing(self) -> bool {
+        matches!(self, SecureBootState::Enabled)
+    }
 }
 
 #[cfg(test)]
@@ -36,10 +38,22 @@ mod tests {
 
     #[test]
     fn decodes_firmware_bytes() {
-        assert_eq!(SecureBootState::from_vars(Some(&[1]), Some(&[0])), SecureBootState::Enabled);
-        assert_eq!(SecureBootState::from_vars(Some(&[0]), None), SecureBootState::Disabled);
-        assert_eq!(SecureBootState::from_vars(Some(&[1]), Some(&[1])), SecureBootState::SetupMode);
-        assert_eq!(SecureBootState::from_vars(None, None), SecureBootState::Unknown);
+        assert_eq!(
+            SecureBootState::from_vars(Some(&[1]), Some(&[0])),
+            SecureBootState::Enabled
+        );
+        assert_eq!(
+            SecureBootState::from_vars(Some(&[0]), None),
+            SecureBootState::Disabled
+        );
+        assert_eq!(
+            SecureBootState::from_vars(Some(&[1]), Some(&[1])),
+            SecureBootState::SetupMode
+        );
+        assert_eq!(
+            SecureBootState::from_vars(None, None),
+            SecureBootState::Unknown
+        );
         assert!(SecureBootState::from_vars(Some(&[1]), None).is_enforcing());
     }
 }

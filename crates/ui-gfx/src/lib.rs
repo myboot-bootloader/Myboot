@@ -11,14 +11,14 @@
 extern crate alloc;
 
 pub mod canvas;
-pub mod theme;
 pub mod font;
 pub mod menu;
 pub mod recovery;
 pub mod render;
+pub mod theme;
 
 #[cfg(test)]
 extern crate std;
 
 pub use canvas::{Canvas, Rgb};
-pub use menu::{Menu, InputEvent, MenuOutcome, Row};
+pub use menu::{InputEvent, Menu, MenuOutcome, Row};

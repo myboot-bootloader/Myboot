@@ -12,8 +12,8 @@
 //! federates, it does not replace (report §2.7).
 extern crate alloc;
 use alloc::vec::Vec;
-use ports::{VarStore, VarNamespace, IoError};
 use persistence::loadopt::{decode_boot_order, encode_boot_order};
+use ports::{IoError, VarNamespace, VarStore};
 
 pub const VAR_BOOT_ORDER: &str = "BootOrder";
 
@@ -34,12 +34,16 @@ pub struct ReconcilePlan {
 
 impl ReconcilePlan {
     /// True when the firmware already matches desired — nothing to do.
-    pub fn is_noop(&self) -> bool { self.steps.is_empty() }
+    pub fn is_noop(&self) -> bool {
+        self.steps.is_empty()
+    }
 }
 
 /// Everything needed to restore the prior firmware state if verification fails.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Snapshot { pub boot_order: Option<Vec<u16>> }
+pub struct Snapshot {
+    pub boot_order: Option<Vec<u16>>,
+}
 
 /// Compute the reconciliation plan for a desired boot order.
 ///
@@ -48,14 +52,20 @@ pub struct Snapshot { pub boot_order: Option<Vec<u16>> }
 /// Reads actual state through the port; performs NO writes.
 pub fn plan_boot_order<V: VarStore>(vars: &V, desired: &[u16]) -> ReconcilePlan {
     let actual = read_boot_order(vars);
-    let snapshot = Snapshot { boot_order: actual.clone() };
+    let snapshot = Snapshot {
+        boot_order: actual.clone(),
+    };
 
     let matches = match &actual {
         Some(a) => a.as_slice() == desired,
         None => desired.is_empty(),
     };
 
-    let steps = if matches { Vec::new() } else { alloc::vec![PlanStep::SetBootOrder(desired.to_vec())] };
+    let steps = if matches {
+        Vec::new()
+    } else {
+        alloc::vec![PlanStep::SetBootOrder(desired.to_vec())]
+    };
     ReconcilePlan { steps, snapshot }
 }
 
@@ -66,7 +76,11 @@ pub fn desired_with_myboot_first<V: VarStore>(vars: &V, myboot_option: u16) -> V
     let mut out = Vec::new();
     out.push(myboot_option);
     if let Some(actual) = read_boot_order(vars) {
-        for n in actual { if n != myboot_option { out.push(n); } }
+        for n in actual {
+            if n != myboot_option {
+                out.push(n);
+            }
+        }
     }
     out
 }
@@ -77,7 +91,11 @@ pub fn apply<V: VarStore>(vars: &mut V, plan: &ReconcilePlan) -> Result<(), IoEr
     for step in &plan.steps {
         match step {
             PlanStep::SetBootOrder(order) => {
-                vars.set(VarNamespace::Global, VAR_BOOT_ORDER, &encode_boot_order(order))?;
+                vars.set(
+                    VarNamespace::Global,
+                    VAR_BOOT_ORDER,
+                    &encode_boot_order(order),
+                )?;
             }
         }
     }
@@ -87,7 +105,11 @@ pub fn apply<V: VarStore>(vars: &mut V, plan: &ReconcilePlan) -> Result<(), IoEr
 /// Restore the pre-reconciliation state from a snapshot (rollback path).
 pub fn restore<V: VarStore>(vars: &mut V, snap: &Snapshot) -> Result<(), IoError> {
     match &snap.boot_order {
-        Some(order) => vars.set(VarNamespace::Global, VAR_BOOT_ORDER, &encode_boot_order(order)),
+        Some(order) => vars.set(
+            VarNamespace::Global,
+            VAR_BOOT_ORDER,
+            &encode_boot_order(order),
+        ),
         None => vars.delete(VarNamespace::Global, VAR_BOOT_ORDER),
     }
 }
@@ -105,7 +127,12 @@ mod tests {
     use ports::mock::MockVarStore;
 
     fn set_order(vs: &mut MockVarStore, order: &[u16]) {
-        vs.set(VarNamespace::Global, VAR_BOOT_ORDER, &encode_boot_order(order)).unwrap();
+        vs.set(
+            VarNamespace::Global,
+            VAR_BOOT_ORDER,
+            &encode_boot_order(order),
+        )
+        .unwrap();
     }
     fn get_order(vs: &MockVarStore) -> Vec<u16> {
         decode_boot_order(&vs.get(VarNamespace::Global, VAR_BOOT_ORDER).unwrap())

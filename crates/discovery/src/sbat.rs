@@ -10,21 +10,30 @@
 //! binary, so unrelated text (e.g. "details" containing "tails") cannot match.
 //! Total: malformed input yields `None`.
 extern crate alloc;
-use alloc::string::String;
 use crate::esp::DISTRO_MARKERS;
+use alloc::string::String;
 
 /// The distro named by the last `<component>.<vendor>` entry whose vendor is a
 /// known distro id, or `None`. Non-distro vendor suffixes (e.g. `grub.peimage`)
 /// and unknown ones (e.g. `grub.debian14`) are skipped.
 pub fn distro_from_sbat(section: &[u8]) -> Option<String> {
     // The section is NUL-padded to its virtual size.
-    let end = section.iter().position(|&b| b == 0).unwrap_or(section.len());
+    let end = section
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(section.len());
     let text = core::str::from_utf8(section.get(..end)?).ok()?;
     let mut found: Option<&'static str> = None;
     for line in text.lines() {
         let component = line.split(',').next().unwrap_or("").trim();
-        let vendor = match component.rsplit_once('.') { Some((_, v)) => v, None => continue };
-        if let Some((_, name)) = DISTRO_MARKERS.iter().find(|(id, _)| id.eq_ignore_ascii_case(vendor)) {
+        let vendor = match component.rsplit_once('.') {
+            Some((_, v)) => v,
+            None => continue,
+        };
+        if let Some((_, name)) = DISTRO_MARKERS
+            .iter()
+            .find(|(id, _)| id.eq_ignore_ascii_case(vendor))
+        {
             found = Some(name);
         }
     }
@@ -35,7 +44,8 @@ pub fn distro_from_sbat(section: &[u8]) -> Option<String> {
 mod tests {
     use super::*;
 
-    const PARROT_GRUB: &[u8] = b"sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md\n\
+    const PARROT_GRUB: &[u8] =
+        b"sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md\n\
 grub,5,Free Software Foundation,grub,2.14,https://www.gnu.org/software/grub/\n\
 grub.debian,5,Debian,grub2,2.14-2parrot3,https://tracker.debian.org/pkg/grub2\n\
 grub.debian14,1,Debian,grub2,2.14-2parrot3,https://tracker.debian.org/pkg/grub2\n\
@@ -73,6 +83,10 @@ shim.debian,1,Debian,shim,15.8,https://tracker.debian.org/pkg/shim\n";
         assert_eq!(distro_from_sbat(b""), None);
         assert_eq!(distro_from_sbat(&[0xFF, 0xFE, b'.', b'u']), None);
         assert_eq!(distro_from_sbat(b"no commas or dots at all"), None);
-        assert_eq!(distro_from_sbat(b"details,1,x\n"), None, "no substring matching");
+        assert_eq!(
+            distro_from_sbat(b"details,1,x\n"),
+            None,
+            "no substring matching"
+        );
     }
 }

@@ -12,8 +12,8 @@
 extern crate alloc;
 
 pub mod loadopt;
-pub mod nvram;
 pub mod log;
+pub mod nvram;
 
 #[cfg(test)]
 extern crate std;

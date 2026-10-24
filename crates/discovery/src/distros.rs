@@ -8,18 +8,23 @@
 //! Where a distro ships an `os-release` file on the ESP we read `PRETTY_NAME`
 //! for the exact edition; otherwise the vendor directory gives the family name.
 extern crate alloc;
+use crate::RawEntry;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use graph::{BootMethod, EntryRole, OsKind};
 use ports::FileStore;
-use graph::{OsKind, EntryRole, BootMethod};
-use crate::RawEntry;
 
 pub const EFI_DIR: &str = "\\EFI";
 
 /// Loader file names to try, in order of preference: shim first (it is what a
 /// Secure Boot chain launches), then GRUB, then systemd-boot.
-const LOADERS: &[&str] = &["shimx64.efi", "grubx64.efi", "systemd-bootx64.efi", "bootx64.efi"];
+const LOADERS: &[&str] = &[
+    "shimx64.efi",
+    "grubx64.efi",
+    "systemd-bootx64.efi",
+    "bootx64.efi",
+];
 
 /// Known distro vendor-directory names → their display names. Directory matching
 /// is case-insensitive (the ESP is FAT: case-preserving, case-insensitive).
@@ -65,27 +70,46 @@ const KNOWN: &[(&str, &str)] = &[
 /// Scan the ESP for installed distributions.
 pub fn discover<F: FileStore + ?Sized>(fs: &F) -> Vec<RawEntry> {
     let mut out = Vec::new();
-    let dirs = match fs.list_dir(EFI_DIR) { Ok(d) => d, Err(_) => return out };
+    let dirs = match fs.list_dir(EFI_DIR) {
+        Ok(d) => d,
+        Err(_) => return out,
+    };
 
     for dir in dirs {
         // Skip the vendor dirs handled by other sources / not Linux distros.
         let low = dir.to_ascii_lowercase();
-        if matches!(low.as_str(), "boot" | "microsoft" | "systemd" | "refind" | "nixos" | "myboot") {
+        if matches!(
+            low.as_str(),
+            "boot" | "microsoft" | "systemd" | "refind" | "nixos" | "myboot"
+        ) {
             continue; // BOOT=fallback, Microsoft=Windows, nixos handled by bootspec
         }
 
         // Find a loader inside this vendor directory.
         let loader = LOADERS.iter().find_map(|name| {
             let path = format!("{EFI_DIR}\\{dir}\\{name}");
-            if fs.exists(&path) { Some(path) } else { None }
+            if fs.exists(&path) {
+                Some(path)
+            } else {
+                None
+            }
         });
-        let loader = match loader { Some(l) => l, None => continue };
+        let loader = match loader {
+            Some(l) => l,
+            None => continue,
+        };
 
         // Resolve the display name: known table → PRETTY_NAME on ESP → dir name.
         let (kind, name) = classify(&low, &dir);
         let title = pretty_name_on_esp(fs, &dir).unwrap_or_else(|| name.clone());
 
-        let mut e = RawEntry::new(kind, name, title, EntryRole::Default, BootMethod::EfiChainload);
+        let mut e = RawEntry::new(
+            kind,
+            name,
+            title,
+            EntryRole::Default,
+            BootMethod::EfiChainload,
+        );
         e.loader = Some(loader);
         out.push(e);
     }
@@ -95,7 +119,9 @@ pub fn discover<F: FileStore + ?Sized>(fs: &F) -> Vec<RawEntry> {
 /// Classify a vendor directory into (OsKind, display name).
 fn classify(low: &str, original: &str) -> (OsKind, String) {
     for (slug, name) in KNOWN {
-        if low == *slug { return (OsKind::Linux, (*name).to_string()); }
+        if low == *slug {
+            return (OsKind::Linux, (*name).to_string());
+        }
     }
     // Unknown vendor dir that nonetheless holds a loader: still a Linux/EFI OS.
     (OsKind::Linux, capitalise(original))
@@ -108,7 +134,9 @@ fn pretty_name_on_esp<F: FileStore + ?Sized>(fs: &F, dir: &str) -> Option<String
         let path = format!("{EFI_DIR}\\{dir}\\{candidate}");
         if let Ok(bytes) = fs.read(&path) {
             if let Ok(text) = core::str::from_utf8(&bytes) {
-                if let Some(name) = parse_pretty_name(text) { return Some(name); }
+                if let Some(name) = parse_pretty_name(text) {
+                    return Some(name);
+                }
             }
         }
     }
@@ -121,7 +149,9 @@ pub fn parse_pretty_name(text: &str) -> Option<String> {
         let line = line.trim();
         if let Some(rest) = line.strip_prefix("PRETTY_NAME=") {
             let v = rest.trim().trim_matches('"').trim_matches('\'');
-            if !v.is_empty() { return Some(v.to_string()); }
+            if !v.is_empty() {
+                return Some(v.to_string());
+            }
         }
     }
     None
@@ -149,19 +179,31 @@ mod tests {
             .with_file("\\EFI\\Microsoft\\Boot\\bootmgfw.efi", b"MZ"); // ignored here
         let entries = discover(&fs);
         let ubuntu = entries.iter().find(|e| e.title == "Ubuntu").unwrap();
-        assert_eq!(ubuntu.loader.as_deref(), Some("\\EFI\\ubuntu\\shimx64.efi"), "shim preferred");
+        assert_eq!(
+            ubuntu.loader.as_deref(),
+            Some("\\EFI\\ubuntu\\shimx64.efi"),
+            "shim preferred"
+        );
         assert!(entries.iter().any(|e| e.title == "Kali Linux"));
         assert!(!entries.iter().any(|e| e.title.contains("Microsoft")));
-        assert!(entries.iter().all(|e| e.kind == OsKind::Linux && e.method == BootMethod::EfiChainload));
+        assert!(entries
+            .iter()
+            .all(|e| e.kind == OsKind::Linux && e.method == BootMethod::EfiChainload));
     }
 
     #[test]
     fn reads_pretty_name_from_os_release_when_present() {
         let fs = MockFileStore::new()
             .with_file("\\EFI\\zorin\\grubx64.efi", b"MZ")
-            .with_file("\\EFI\\zorin\\os-release", b"NAME=Zorin\nPRETTY_NAME=\"Zorin OS 17.1\"\n");
+            .with_file(
+                "\\EFI\\zorin\\os-release",
+                b"NAME=Zorin\nPRETTY_NAME=\"Zorin OS 17.1\"\n",
+            );
         let entries = discover(&fs);
-        let z = entries.iter().find(|e| e.loader.as_deref() == Some("\\EFI\\zorin\\grubx64.efi")).unwrap();
+        let z = entries
+            .iter()
+            .find(|e| e.loader.as_deref() == Some("\\EFI\\zorin\\grubx64.efi"))
+            .unwrap();
         assert_eq!(z.title, "Zorin OS 17.1", "exact edition from PRETTY_NAME");
     }
 
@@ -182,7 +224,10 @@ mod tests {
 
     #[test]
     fn parse_pretty_name_is_total() {
-        assert_eq!(parse_pretty_name("PRETTY_NAME=\"Kali GNU/Linux Rolling\"").as_deref(), Some("Kali GNU/Linux Rolling"));
+        assert_eq!(
+            parse_pretty_name("PRETTY_NAME=\"Kali GNU/Linux Rolling\"").as_deref(),
+            Some("Kali GNU/Linux Rolling")
+        );
         assert_eq!(parse_pretty_name("NAME=Debian\n"), None);
         assert_eq!(parse_pretty_name(""), None);
     }

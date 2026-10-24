@@ -11,7 +11,7 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 use graph::EntryId;
-use ports::{VarStore, VarNamespace, IoResult, IoError};
+use ports::{IoError, IoResult, VarNamespace, VarStore};
 
 /// Vendor variable holding the in-flight boot marker.
 pub const VAR_BOOT_ATTEMPT: &str = "BootAttempt";
@@ -25,7 +25,12 @@ pub struct Marker {
 }
 
 impl Marker {
-    pub fn attempting(entry: EntryId) -> Self { Marker { entry, confirmed: false } }
+    pub fn attempting(entry: EntryId) -> Self {
+        Marker {
+            entry,
+            confirmed: false,
+        }
+    }
 
     pub fn encode(&self) -> Vec<u8> {
         let mut s = String::new();
@@ -39,7 +44,10 @@ impl Marker {
     pub fn decode(bytes: &[u8]) -> Result<Marker, IoError> {
         let s = core::str::from_utf8(bytes).map_err(|_| IoError::Corrupt)?;
         let (flag, id) = s.split_once('\t').ok_or(IoError::Corrupt)?;
-        Ok(Marker { entry: EntryId::from_raw(id), confirmed: flag == "1" })
+        Ok(Marker {
+            entry: EntryId::from_raw(id),
+            confirmed: flag == "1",
+        })
     }
 }
 
@@ -67,10 +75,12 @@ pub fn clear<V: VarStore>(vars: &mut V) -> IoResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use graph::{EntryId, OsKind, EntryRole};
+    use graph::{EntryId, EntryRole, OsKind};
     use ports::mock::MockVarStore;
 
-    fn id() -> EntryId { EntryId::derive(OsKind::NixOs, &EntryRole::Generation(128), None) }
+    fn id() -> EntryId {
+        EntryId::derive(OsKind::NixOs, &EntryRole::Generation(128), None)
+    }
 
     #[test]
     fn arm_read_clear_cycle() {
@@ -86,7 +96,10 @@ mod tests {
 
     #[test]
     fn marker_roundtrips_and_decode_is_total() {
-        let m = Marker { entry: id(), confirmed: true };
+        let m = Marker {
+            entry: id(),
+            confirmed: true,
+        };
         assert_eq!(Marker::decode(&m.encode()).unwrap(), m);
         assert!(Marker::decode(b"no-tab-here").is_err());
         assert!(Marker::decode(&[0xFF, 0xFE]).is_err()); // invalid utf8

@@ -13,11 +13,11 @@
 #![forbid(unsafe_code)]
 extern crate alloc;
 
-pub mod state;
 pub mod policy;
+pub mod state;
 
 #[cfg(test)]
 extern crate std;
 
+pub use policy::{decide_launch, LaunchDecision, Verification};
 pub use state::SecureBootState;
-pub use policy::{LaunchDecision, decide_launch, Verification};

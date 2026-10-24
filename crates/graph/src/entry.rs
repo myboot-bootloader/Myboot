@@ -1,9 +1,9 @@
 //! A single bootable target — the leaf of the Boot Graph (report §3.5).
 extern crate alloc;
-use alloc::string::String;
+use crate::health::{BootResult, Health};
 use crate::ids::EntryId;
-use crate::kinds::{OsKind, EntryRole, BootMethod};
-use crate::health::{Health, BootResult};
+use crate::kinds::{BootMethod, EntryRole, OsKind};
+use alloc::string::String;
 
 /// Filesystem path to an EFI file, e.g. `\\EFI\\Microsoft\\Boot\\bootmgfw.efi`.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -29,20 +29,33 @@ pub struct BootEntry {
 
 impl BootEntry {
     /// Construct an entry, deriving the stable id from its durable attributes.
-    pub fn new(kind: OsKind, title: impl Into<String>, role: EntryRole, method: BootMethod) -> Self {
+    pub fn new(
+        kind: OsKind,
+        title: impl Into<String>,
+        role: EntryRole,
+        method: BootMethod,
+    ) -> Self {
         let id = EntryId::derive(kind, &role, None);
         BootEntry {
-            id, title: title.into(), role, method,
-            loader: None, kernel: None, initrd: None, cmdline: None,
+            id,
+            title: title.into(),
+            role,
+            method,
+            loader: None,
+            kernel: None,
+            initrd: None,
+            cmdline: None,
             volume: None,
-            health: Health::Unknown, last_result: None,
+            health: Health::Unknown,
+            last_result: None,
         }
     }
     /// Recompute the stable id from the current durable attributes, INCLUDING the
     /// volume (call after setting loader/volume). Keeps the id as the SSOT key.
     pub fn rederive_id(&mut self, kind: OsKind) {
         self.id = EntryId::derive_scoped(
-            kind, &self.role,
+            kind,
+            &self.role,
             self.loader.as_ref().map(|p| p.0.as_str()),
             self.volume.as_deref(),
         );
@@ -53,5 +66,7 @@ impl BootEntry {
         self.loader = Some(p);
         self
     }
-    pub fn bootable(&self) -> bool { self.health.is_bootable() }
+    pub fn bootable(&self) -> bool {
+        self.health.is_bootable()
+    }
 }

@@ -18,7 +18,12 @@ pub struct Row {
 
 /// A render-friendly health tag (keeps `theme` colour choice out of the model).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HealthTag { Ok, Warn, Fail, Unknown }
+pub enum HealthTag {
+    Ok,
+    Warn,
+    Fail,
+    Unknown,
+}
 
 impl HealthTag {
     pub fn of(h: &Health) -> Self {
@@ -33,7 +38,17 @@ impl HealthTag {
 
 /// Input events the menu understands (mapped from raw key events by the caller).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InputEvent { Up, Down, Enter, Escape, Timeout, Edit, Recovery, Firmware, Shell }
+pub enum InputEvent {
+    Up,
+    Down,
+    Enter,
+    Escape,
+    Timeout,
+    Edit,
+    Recovery,
+    Firmware,
+    Shell,
+}
 
 /// What the engine should do after handling an event.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -74,17 +89,29 @@ impl Menu {
         Menu { rows, cursor }
     }
 
-    pub fn rows(&self) -> &[Row] { &self.rows }
-    pub fn cursor(&self) -> usize { self.cursor }
-    pub fn selected(&self) -> Option<&Row> { self.rows.get(self.cursor) }
+    pub fn rows(&self) -> &[Row] {
+        &self.rows
+    }
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+    pub fn selected(&self) -> Option<&Row> {
+        self.rows.get(self.cursor)
+    }
 
     /// Handle one input event, updating the cursor and possibly returning an
     /// outcome. Navigation skips nothing (you can inspect unbootable entries) but
     /// Enter on an unbootable row does not boot.
     pub fn handle(&mut self, ev: InputEvent) -> MenuOutcome {
         match ev {
-            InputEvent::Up => { self.move_cursor(-1); MenuOutcome::Idle }
-            InputEvent::Down => { self.move_cursor(1); MenuOutcome::Idle }
+            InputEvent::Up => {
+                self.move_cursor(-1);
+                MenuOutcome::Idle
+            }
+            InputEvent::Down => {
+                self.move_cursor(1);
+                MenuOutcome::Idle
+            }
             InputEvent::Enter | InputEvent::Timeout => match self.selected() {
                 Some(r) if r.bootable => MenuOutcome::Boot(r.id.clone()),
                 _ => MenuOutcome::Idle,
@@ -102,11 +129,17 @@ impl Menu {
     }
 
     fn move_cursor(&mut self, delta: isize) {
-        if self.rows.is_empty() { return; }
+        if self.rows.is_empty() {
+            return;
+        }
         let n = self.rows.len() as isize;
         let mut c = self.cursor as isize + delta;
-        if c < 0 { c = n - 1; }        // wrap around
-        if c >= n { c = 0; }
+        if c < 0 {
+            c = n - 1;
+        } // wrap around
+        if c >= n {
+            c = 0;
+        }
         self.cursor = c as usize;
     }
 }
@@ -114,18 +147,36 @@ impl Menu {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use graph::{BootGraph, DiskNode, DiskId, OsNode, OsKind, EntryRole, BootMethod, BootEntry, Health, Reason};
     use alloc::string::ToString;
+    use graph::{
+        BootEntry, BootGraph, BootMethod, DiskId, DiskNode, EntryRole, Health, OsKind, OsNode,
+        Reason,
+    };
 
     fn graph() -> BootGraph {
         let mut g = BootGraph::new();
         let mut os = OsNode::new(OsKind::NixOs, "NixOS");
-        let mut a = BootEntry::new(OsKind::NixOs, "gen128", EntryRole::Generation(128), BootMethod::NixGeneration);
+        let mut a = BootEntry::new(
+            OsKind::NixOs,
+            "gen128",
+            EntryRole::Generation(128),
+            BootMethod::NixGeneration,
+        );
         a.health = Health::Healthy;
-        let mut b = BootEntry::new(OsKind::NixOs, "gen127", EntryRole::Generation(127), BootMethod::NixGeneration);
+        let mut b = BootEntry::new(
+            OsKind::NixOs,
+            "gen127",
+            EntryRole::Generation(127),
+            BootMethod::NixGeneration,
+        );
         b.health = Health::Unbootable(Reason::new("x"));
-        os.push(a); os.push(b);
-        g.add_disk(DiskNode { id: DiskId(0), label: "d".to_string(), systems: alloc::vec![os] });
+        os.push(a);
+        os.push(b);
+        g.add_disk(DiskNode {
+            id: DiskId(0),
+            label: "d".to_string(),
+            systems: alloc::vec![os],
+        });
         g.sort_canonical();
         g
     }
@@ -145,7 +196,7 @@ mod tests {
         assert_eq!(m.cursor(), 1);
         m.handle(InputEvent::Down); // wraps back to 0
         assert_eq!(m.cursor(), 0);
-        m.handle(InputEvent::Up);   // wraps to last
+        m.handle(InputEvent::Up); // wraps to last
         assert_eq!(m.cursor(), 1);
     }
 
@@ -164,7 +215,7 @@ mod tests {
         assert_eq!(m.handle(InputEvent::Firmware), MenuOutcome::Firmware);
         assert_eq!(m.handle(InputEvent::Shell), MenuOutcome::Shell);
         assert_eq!(m.handle(InputEvent::Escape), MenuOutcome::Idle); // nothing to go back to
-        // Edit yields EditCmdline for a bootable selection.
+                                                                     // Edit yields EditCmdline for a bootable selection.
         match m.handle(InputEvent::Edit) {
             MenuOutcome::EditCmdline(_) => {}
             o => panic!("expected EditCmdline, got {o:?}"),
@@ -174,6 +225,9 @@ mod tests {
     #[test]
     fn timeout_boots_the_selected_default() {
         let mut m = Menu::from_graph(&graph());
-        assert!(matches!(m.handle(InputEvent::Timeout), MenuOutcome::Boot(_)));
+        assert!(matches!(
+            m.handle(InputEvent::Timeout),
+            MenuOutcome::Boot(_)
+        ));
     }
 }

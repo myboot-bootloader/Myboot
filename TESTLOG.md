@@ -478,3 +478,50 @@ Observed, not changed: the staged ESP's config writes `timeout_secs = 20`, but
 `config::schema` reads the key `timeout`, so the ISO menu auto-boots after the default 5 s
 (the screenshot shows "auto-boot 1s"). The key names in `pyboot/esp.py` and the schema
 disagree.
+
+## 2026-10-24 — Fix: CI lint job (fmt + clippy) (branch feat/fail-job)
+
+CI evidence (reviewer-supplied job log): the `lint` job failed at `cargo fmt --all --check`.
+The diffs were in `engine/src/pipeline.rs`, `graph/src/health.rs`, `ports/src/lib.rs`,
+`ui-gfx/src/menu.rs` and others. Reproduced locally with rustfmt 1.9.0 / clippy 0.1.98:
+- `cargo fmt --all --check`: 540 diff hunks in 76 files.
+- The next step, `cargo clippy -p myboot --target x86_64-unknown-uefi -- -D warnings`,
+  which CI never reached, ALSO failed: 10 errors in arch/persistence/policy/ui-gfx, then 3
+  more in config/discovery/engine once those crates compiled.
+
+Commits:
+1. `style: apply cargo fmt to the whole workspace`. Only `cargo fmt --all`. Host tests
+   137/0. The EFI binary has the same size, and 49 bytes differ (embedded line/column
+   numbers).
+2. Clippy fixes, each behaviour-preserving:
+   - `doc_overindented_list_items`: `arch/src/lib.rs` and `config/src/lib.rs` doc lists
+     re-indented as proper (nested) list items; the text is unchanged.
+   - `chunks_exact` with a constant size: `persistence/src/loadopt.rs` (`decode_boot_order`)
+     and `discovery/src/esp.rs` (`decode_text`) use `as_chunks::<2>()`. An odd trailing byte
+     is still dropped.
+   - `single_match`: `persistence/src/log.rs` uses `if let`.
+   - `unnecessary_sort_by`: `policy/src/decide.rs` uses
+     `sort_by_key(|e| Reverse(e.health.rank()))`. Both sorts are stable, so the order is
+     identical.
+   - `too_many_arguments`: `ui-gfx/src/canvas.rs` `Canvas::card` gets a local `#[allow]`
+     with a reason. Restructuring the trait method would touch every caller for no gain.
+   - `manual_checked_div`: `ui-gfx/src/render.rs` `fit_chars` uses
+     `w.checked_div(adv).unwrap_or(0)`.
+   - `manual_div_ceil`: `engine/src/direct_boot.rs` `alloc_pages_for` uses
+     `bytes.div_ceil(0x1000)`. Same result, and no overflow at `usize::MAX`.
+
+Ran (as CI does):
+- `cargo fmt --all --check` clean.
+- `cargo clippy -p myboot --target x86_64-unknown-uefi -- -D warnings` exit 0. Also clean
+  with `--features engine/boot-timing`.
+- Host tests 137/0.
+- `cargo build -p myboot --release --target x86_64-unknown-uefi` ok.
+- pytest 14/0. `./manage.py smoke` 6/6.
+
+Notes, not changed:
+- The `lint` job is `continue-on-error: true` (advisory), so it does not block merges.
+- CI uses `dtolnay/rust-toolchain@stable`. A newer stable clippy than 0.1.98 may add lints.
+- CI's `build-efi` step greps `file` output for `EFI application`. That matches older
+  `file` ("PE32+ executable (EFI application)"), but `file` 5.48 prints
+  "PE32+ executable for EFI (application)", so that step will break when the runner's
+  `file` is upgraded.

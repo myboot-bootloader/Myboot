@@ -1,11 +1,11 @@
 //! Kani proof harnesses (report §3.12). Run with `cargo kani -p storage`.
 //! Each harness proves a parser is TOTAL — no panic, overflow, or OOB — for ALL
 //! inputs up to the given bound. Compiled only under `--cfg kani`.
-use crate::gpt::{GptHeader, GptEntry, parse_partitions};
-use crate::mbr;
 use crate::fat::FatBpb;
-use crate::pe::PeHeader;
+use crate::gpt::{parse_partitions, GptEntry, GptHeader};
+use crate::mbr;
 use crate::pe::section;
+use crate::pe::PeHeader;
 
 #[kani::proof]
 fn gpt_header_parse_never_panics() {

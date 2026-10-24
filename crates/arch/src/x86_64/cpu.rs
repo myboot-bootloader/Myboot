@@ -7,7 +7,9 @@ use core::arch::asm;
 /// the unrecoverable path.
 #[inline]
 pub fn disable_interrupts() {
-    unsafe { asm!("cli", options(nomem, nostack, preserves_flags)); }
+    unsafe {
+        asm!("cli", options(nomem, nostack, preserves_flags));
+    }
 }
 
 /// Halt the CPU forever (interrupts already disabled). Used as the terminal
@@ -16,7 +18,9 @@ pub fn disable_interrupts() {
 pub fn halt_forever() -> ! {
     unsafe {
         asm!("cli", options(nomem, nostack, preserves_flags));
-        loop { asm!("hlt", options(nomem, nostack, preserves_flags)); }
+        loop {
+            asm!("hlt", options(nomem, nostack, preserves_flags));
+        }
     }
 }
 

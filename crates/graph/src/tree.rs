@@ -2,11 +2,11 @@
 //! The single authoritative model of what is bootable (SSOT); all interfaces and
 //! decisions operate over this.
 extern crate alloc;
+use crate::entry::BootEntry;
+use crate::ids::{DiskId, EntryId};
+use crate::kinds::OsKind;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::ids::{EntryId, DiskId};
-use crate::kinds::OsKind;
-use crate::entry::BootEntry;
 
 /// An operating system installed on a disk, grouping its entries.
 #[derive(Clone, Debug)]
@@ -17,9 +17,15 @@ pub struct OsNode {
 }
 impl OsNode {
     pub fn new(kind: OsKind, name: impl Into<String>) -> Self {
-        OsNode { kind, name: name.into(), entries: Vec::new() }
+        OsNode {
+            kind,
+            name: name.into(),
+            entries: Vec::new(),
+        }
     }
-    pub fn push(&mut self, e: BootEntry) { self.entries.push(e); }
+    pub fn push(&mut self, e: BootEntry) {
+        self.entries.push(e);
+    }
 }
 
 /// A physical disk holding one or more operating systems.
@@ -37,12 +43,19 @@ pub struct BootGraph {
 }
 
 impl BootGraph {
-    pub fn new() -> Self { Self::default() }
-    pub fn add_disk(&mut self, disk: DiskNode) { self.disks.push(disk); }
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn add_disk(&mut self, disk: DiskNode) {
+        self.disks.push(disk);
+    }
 
     /// Iterate every entry in the graph, flattened, in traversal order.
     pub fn entries(&self) -> impl Iterator<Item = &BootEntry> {
-        self.disks.iter().flat_map(|d| d.systems.iter()).flat_map(|o| o.entries.iter())
+        self.disks
+            .iter()
+            .flat_map(|d| d.systems.iter())
+            .flat_map(|o| o.entries.iter())
     }
 
     /// Look up an entry by its stable id (SSOT lookups go through here).
@@ -52,14 +65,19 @@ impl BootGraph {
 
     /// Mutable lookup for annotating health / results.
     pub fn find_mut(&mut self, id: &EntryId) -> Option<&mut BootEntry> {
-        self.disks.iter_mut()
+        self.disks
+            .iter_mut()
             .flat_map(|d| d.systems.iter_mut())
             .flat_map(|o| o.entries.iter_mut())
             .find(|e| &e.id == id)
     }
 
-    pub fn len(&self) -> usize { self.entries().count() }
-    pub fn is_empty(&self) -> bool { self.len() == 0 }
+    pub fn len(&self) -> usize {
+        self.entries().count()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
     /// Keep only entries for which `keep` returns true, pruning any OS or disk node
     /// left empty. This preserves the SSOT structure and the full n-OS listing —
@@ -85,8 +103,12 @@ impl BootGraph {
     pub fn sort_canonical(&mut self) {
         for d in &mut self.disks {
             for o in &mut d.systems {
-                o.entries.sort_by(|a, b| a.role.order_key().cmp(&b.role.order_key())
-                    .then_with(|| a.title.cmp(&b.title)));
+                o.entries.sort_by(|a, b| {
+                    a.role
+                        .order_key()
+                        .cmp(&b.role.order_key())
+                        .then_with(|| a.title.cmp(&b.title))
+                });
             }
         }
     }

@@ -34,19 +34,31 @@ pub fn u32_le(buf: &[u8], at: usize) -> Result<u32, OutOfBounds> {
 #[inline]
 pub fn u64_le(buf: &[u8], at: usize) -> Result<u64, OutOfBounds> {
     let b = slice_at(buf, at, 8)?;
-    Ok(u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
+    Ok(u64::from_le_bytes([
+        b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+    ]))
 }
 
 /// Read a fixed-length ASCII/OEM field, trimming trailing spaces and NULs.
 /// Non-UTF8 bytes are dropped rather than panicking.
-pub fn ascii_trimmed(buf: &[u8], at: usize, len: usize) -> Result<alloc::string::String, OutOfBounds> {
+pub fn ascii_trimmed(
+    buf: &[u8],
+    at: usize,
+    len: usize,
+) -> Result<alloc::string::String, OutOfBounds> {
     use alloc::string::String;
     let b = slice_at(buf, at, len)?;
     let mut s = String::new();
     for &c in b {
-        if c == 0 { break; }
-        if c.is_ascii_graphic() || c == b' ' { s.push(c as char); }
+        if c == 0 {
+            break;
+        }
+        if c.is_ascii_graphic() || c == b' ' {
+            s.push(c as char);
+        }
     }
-    while s.ends_with(' ') { s.pop(); }
+    while s.ends_with(' ') {
+        s.pop();
+    }
     Ok(s)
 }

@@ -19,7 +19,7 @@ fn efi_main() -> Status {
     // hide anything below error; boot observability wants the pipeline summary).
     log::set_max_level(log::LevelFilter::Info);
     match engine::run() {
-        Ok(never) => match never {},         // Infallible: handoff never returns
+        Ok(never) => match never {}, // Infallible: handoff never returns
         Err(e) => {
             log::error!("myboot: engine could not hand off: {e:?}");
             Status::LOAD_ERROR

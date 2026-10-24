@@ -8,21 +8,50 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Value { Str(String), Int(i64), Bool(bool) }
+pub enum Value {
+    Str(String),
+    Int(i64),
+    Bool(bool),
+}
 
 impl Value {
-    pub fn as_str(&self) -> Option<&str> { if let Value::Str(s) = self { Some(s) } else { None } }
-    pub fn as_int(&self) -> Option<i64> { if let Value::Int(i) = self { Some(*i) } else { None } }
-    pub fn as_bool(&self) -> Option<bool> { if let Value::Bool(b) = self { Some(*b) } else { None } }
+    pub fn as_str(&self) -> Option<&str> {
+        if let Value::Str(s) = self {
+            Some(s)
+        } else {
+            None
+        }
+    }
+    pub fn as_int(&self) -> Option<i64> {
+        if let Value::Int(i) = self {
+            Some(*i)
+        } else {
+            None
+        }
+    }
+    pub fn as_bool(&self) -> Option<bool> {
+        if let Value::Bool(b) = self {
+            Some(*b)
+        } else {
+            None
+        }
+    }
 }
 
 /// One key/value pair within a table.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Pair { pub key: String, pub value: Value }
+pub struct Pair {
+    pub key: String,
+    pub value: Value,
+}
 
 /// A named table (`[section]`) or an element of an array-of-tables (`[[x]]`).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Table { pub name: String, pub array_element: bool, pub pairs: Vec<Pair> }
+pub struct Table {
+    pub name: String,
+    pub array_element: bool,
+    pub pairs: Vec<Pair>,
+}
 
 impl Table {
     pub fn get(&self, key: &str) -> Option<&Value> {
@@ -32,7 +61,10 @@ impl Table {
 
 /// The parsed document: a root table plus named sub-tables (in file order).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Document { pub root: Vec<Pair>, pub tables: Vec<Table> }
+pub struct Document {
+    pub root: Vec<Pair>,
+    pub tables: Vec<Table>,
+}
 
 impl Document {
     /// All tables (array or single) with the given name, in file order.
@@ -45,7 +77,10 @@ impl Document {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ParseError { pub line: usize, pub msg: &'static str }
+pub struct ParseError {
+    pub line: usize,
+    pub msg: &'static str,
+}
 
 /// Parse a TOML-subset document. Total; reports the first offending line.
 pub fn parse(input: &str) -> Result<Document, ParseError> {
@@ -54,20 +89,45 @@ pub fn parse(input: &str) -> Result<Document, ParseError> {
 
     for (i, raw) in input.lines().enumerate() {
         let line = strip_comment(raw).trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
 
         if let Some(rest) = line.strip_prefix("[[") {
-            let name = rest.strip_suffix("]]").ok_or(ParseError { line: i + 1, msg: "unterminated [[table]]" })?;
-            doc.tables.push(Table { name: name.trim().to_string(), array_element: true, pairs: Vec::new() });
+            let name = rest.strip_suffix("]]").ok_or(ParseError {
+                line: i + 1,
+                msg: "unterminated [[table]]",
+            })?;
+            doc.tables.push(Table {
+                name: name.trim().to_string(),
+                array_element: true,
+                pairs: Vec::new(),
+            });
             current = Some(doc.tables.len() - 1);
         } else if let Some(rest) = line.strip_prefix('[') {
-            let name = rest.strip_suffix(']').ok_or(ParseError { line: i + 1, msg: "unterminated [table]" })?;
-            doc.tables.push(Table { name: name.trim().to_string(), array_element: false, pairs: Vec::new() });
+            let name = rest.strip_suffix(']').ok_or(ParseError {
+                line: i + 1,
+                msg: "unterminated [table]",
+            })?;
+            doc.tables.push(Table {
+                name: name.trim().to_string(),
+                array_element: false,
+                pairs: Vec::new(),
+            });
             current = Some(doc.tables.len() - 1);
         } else {
-            let (k, v) = split_kv(line).ok_or(ParseError { line: i + 1, msg: "expected key = value" })?;
-            let value = parse_value(v).ok_or(ParseError { line: i + 1, msg: "bad value" })?;
-            let pair = Pair { key: k.to_string(), value };
+            let (k, v) = split_kv(line).ok_or(ParseError {
+                line: i + 1,
+                msg: "expected key = value",
+            })?;
+            let value = parse_value(v).ok_or(ParseError {
+                line: i + 1,
+                msg: "bad value",
+            })?;
+            let pair = Pair {
+                key: k.to_string(),
+                value,
+            };
             match current {
                 Some(idx) => doc.tables[idx].pairs.push(pair),
                 None => doc.root.push(pair),
@@ -82,7 +142,11 @@ fn strip_comment(line: &str) -> &str {
     let bytes = line.as_bytes();
     let mut in_str = false;
     for (i, &b) in bytes.iter().enumerate() {
-        match b { b'"' => in_str = !in_str, b'#' if !in_str => return &line[..i], _ => {} }
+        match b {
+            b'"' => in_str = !in_str,
+            b'#' if !in_str => return &line[..i],
+            _ => {}
+        }
     }
     line
 }
@@ -91,7 +155,9 @@ fn split_kv(line: &str) -> Option<(&str, &str)> {
     let eq = line.find('=')?;
     let k = line[..eq].trim();
     let v = line[eq + 1..].trim();
-    if k.is_empty() || v.is_empty() { return None; }
+    if k.is_empty() || v.is_empty() {
+        return None;
+    }
     Some((k, v))
 }
 
@@ -99,7 +165,11 @@ fn parse_value(v: &str) -> Option<Value> {
     if let Some(inner) = v.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
         return Some(Value::Str(unescape(inner)));
     }
-    match v { "true" => return Some(Value::Bool(true)), "false" => return Some(Value::Bool(false)), _ => {} }
+    match v {
+        "true" => return Some(Value::Bool(true)),
+        "false" => return Some(Value::Bool(false)),
+        _ => {}
+    }
     v.parse::<i64>().ok().map(Value::Int)
 }
 
@@ -114,10 +184,15 @@ fn unescape(s: &str) -> String {
                 Some('"') => out.push('"'),
                 Some('n') => out.push('\n'),
                 Some('t') => out.push('\t'),
-                Some(other) => { out.push('\\'); out.push(other); }
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
                 None => out.push('\\'),
             }
-        } else { out.push(c); }
+        } else {
+            out.push(c);
+        }
     }
     out
 }
@@ -128,7 +203,8 @@ mod tests {
 
     #[test]
     fn parses_sections_pairs_and_arrays() {
-        let doc = parse(r#"
+        let doc = parse(
+            r#"
             # top-level config
             default = "nixos.current"
             timeout = 5
@@ -143,16 +219,23 @@ mod tests {
 
             [[entry]]
             id = "nixos"
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
-        assert_eq!(doc.root_get("default").unwrap().as_str().unwrap(), "nixos.current");
+        assert_eq!(
+            doc.root_get("default").unwrap().as_str().unwrap(),
+            "nixos.current"
+        );
         assert_eq!(doc.root_get("timeout").unwrap().as_int().unwrap(), 5);
         let tx = doc.tables_named("transaction").next().unwrap();
         assert_eq!(tx.get("confirm").unwrap().as_bool().unwrap(), true);
         let entries: alloc::vec::Vec<_> = doc.tables_named("entry").collect();
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].get("loader").unwrap().as_str().unwrap(),
-                   "\\EFI\\Microsoft\\Boot\\bootmgfw.efi");
+        assert_eq!(
+            entries[0].get("loader").unwrap().as_str().unwrap(),
+            "\\EFI\\Microsoft\\Boot\\bootmgfw.efi"
+        );
     }
 
     #[test]

@@ -4,9 +4,9 @@
 extern crate alloc;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use uefi::{guid, Status};
+use ports::{IoError, IoResult, VarNamespace, VarStore};
 use uefi::runtime::{self, VariableAttributes, VariableVendor};
-use ports::{VarStore, VarNamespace, IoError, IoResult};
+use uefi::{guid, Status};
 
 /// EFI global-variable GUID (Boot####, BootOrder, BootNext, BootCurrent).
 const GLOBAL: VariableVendor = VariableVendor(guid!("8be4df61-93ca-11d2-aa0d-00e098032b8c"));
@@ -18,17 +18,28 @@ const VENDOR: VariableVendor = VariableVendor(guid!("6f4e0b2a-1c3d-4e5f-9a8b-0c1
 pub struct UefiVarStore;
 
 impl UefiVarStore {
-    pub fn new() -> Self { UefiVarStore }
+    pub fn new() -> Self {
+        UefiVarStore
+    }
     fn vendor(ns: VarNamespace) -> &'static VariableVendor {
-        match ns { VarNamespace::Global => &GLOBAL, VarNamespace::Vendor => &VENDOR }
+        match ns {
+            VarNamespace::Global => &GLOBAL,
+            VarNamespace::Vendor => &VENDOR,
+        }
     }
 }
-impl Default for UefiVarStore { fn default() -> Self { Self::new() } }
+impl Default for UefiVarStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 fn map_err(s: Status) -> IoError {
     match s {
         Status::NOT_FOUND => IoError::NotFound,
-        Status::ACCESS_DENIED | Status::WRITE_PROTECTED | Status::SECURITY_VIOLATION => IoError::AccessDenied,
+        Status::ACCESS_DENIED | Status::WRITE_PROTECTED | Status::SECURITY_VIOLATION => {
+            IoError::AccessDenied
+        }
         Status::BUFFER_TOO_SMALL | Status::OUT_OF_RESOURCES => IoError::TooLarge,
         Status::DEVICE_ERROR => IoError::DeviceError,
         other => IoError::Other(alloc::format!("uefi status {other:?}")),
@@ -76,7 +87,10 @@ impl VarStore for UefiVarStore {
         // an `Err` means a non-UCS-2 variable name, which per the 0.33 changelog
         // does not stop iteration, so we skip it and continue.
         for entry in runtime::variable_keys() {
-            let key = match entry { Ok(k) => k, Err(_) => continue };
+            let key = match entry {
+                Ok(k) => k,
+                Err(_) => continue,
+            };
             if &key.vendor == want {
                 // `name` is a public `CString16` field in 0.33 (the `name()`
                 // method is deprecated), and always holds a valid UCS-2 string.

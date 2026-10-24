@@ -2,9 +2,9 @@
 //! properties the Kani harnesses prove, but by example — fast feedback on host.
 extern crate std;
 use crate::bytes;
-use crate::gpt::{GptHeader, GptEntry, GPT_SIGNATURE, parse_partitions};
-use crate::mbr;
 use crate::fat::FatBpb;
+use crate::gpt::{parse_partitions, GptEntry, GptHeader, GPT_SIGNATURE};
+use crate::mbr;
 use crate::pe::{self, PeHeader};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -20,7 +20,7 @@ fn parsers_never_panic_on_adversarial_input() {
         vec![0x00; 512],
         vec![0xFF; 512],
         {
-            let mut v = GPT_SIGNATURE.to_vec();  // valid sig, then truncated
+            let mut v = GPT_SIGNATURE.to_vec(); // valid sig, then truncated
             v.extend_from_slice(&[0u8; 10]);
             v
         },
@@ -50,7 +50,7 @@ fn parsers_never_panic_on_adversarial_input() {
 fn gpt_header_roundtrips_minimal_valid() {
     let mut b = vec![0u8; 92];
     b[..8].copy_from_slice(GPT_SIGNATURE);
-    b[72..80].copy_from_slice(&2u64.to_le_bytes());   // entry_lba
+    b[72..80].copy_from_slice(&2u64.to_le_bytes()); // entry_lba
     b[80..84].copy_from_slice(&128u32.to_le_bytes()); // num_entries
     b[84..88].copy_from_slice(&128u32.to_le_bytes()); // entry_size
     let h = GptHeader::parse(&b).expect("valid header");
@@ -76,7 +76,8 @@ fn gpt_entry_empty_slot_is_none_and_ordering_checked() {
 
     // valid entry: nonzero guid, first<=last
     let mut e = vec![0u8; 128];
-    e[0] = 0x28; e[1] = 0x73; // nonzero type guid start
+    e[0] = 0x28;
+    e[1] = 0x73; // nonzero type guid start
     e[32..40].copy_from_slice(&100u64.to_le_bytes());
     e[40..48].copy_from_slice(&200u64.to_le_bytes());
     let parsed = GptEntry::parse(&e).unwrap().unwrap();
@@ -93,13 +94,14 @@ fn parse_partitions_skips_empty_and_stops_on_short_buffer() {
     let mut b = vec![0u8; 92];
     b[..8].copy_from_slice(GPT_SIGNATURE);
     b[72..80].copy_from_slice(&2u64.to_le_bytes());
-    b[80..84].copy_from_slice(&4u32.to_le_bytes());   // claims 4 entries
+    b[80..84].copy_from_slice(&4u32.to_le_bytes()); // claims 4 entries
     b[84..88].copy_from_slice(&128u32.to_le_bytes());
     let h = GptHeader::parse(&b).unwrap();
 
     // provide only ONE valid entry then run out — must not panic, returns 1
     let mut arr = vec![0u8; 128];
-    arr[0] = 0x28; arr[1] = 0x73;
+    arr[0] = 0x28;
+    arr[1] = 0x73;
     arr[32..40].copy_from_slice(&34u64.to_le_bytes());
     arr[40..48].copy_from_slice(&99u64.to_le_bytes());
     let parts = parse_partitions(&h, &arr).unwrap();
@@ -110,7 +112,8 @@ fn parse_partitions_skips_empty_and_stops_on_short_buffer() {
 #[test]
 fn mbr_detects_protective_gpt() {
     let mut b = vec![0u8; 512];
-    b[510] = 0x55; b[511] = 0xAA;
+    b[510] = 0x55;
+    b[511] = 0xAA;
     b[446 + 4] = 0xEE; // first partition type = protective GPT
     assert!(mbr::is_protective_gpt(&b).unwrap());
     b[446 + 4] = 0x83;
@@ -120,10 +123,11 @@ fn mbr_detects_protective_gpt() {
 #[test]
 fn fat_bpb_parses_and_rejects() {
     let mut b = vec![0u8; 512];
-    b[510] = 0x55; b[511] = 0xAA;
+    b[510] = 0x55;
+    b[511] = 0xAA;
     b[3..11].copy_from_slice(b"MSDOS5.0");
     b[11..13].copy_from_slice(&512u16.to_le_bytes()); // bytes/sector
-    b[13] = 8;                                         // sectors/cluster
+    b[13] = 8; // sectors/cluster
     b[14..16].copy_from_slice(&32u16.to_le_bytes());
     b[16] = 2;
     let bpb = FatBpb::parse(&b).unwrap();
@@ -139,14 +143,15 @@ fn fat_bpb_parses_and_rejects() {
 fn pe_recognises_efi_application_and_rejects_garbage() {
     // Build a minimal PE32+ header with subsystem = EFI application (10).
     let mut b = vec![0u8; 0x200];
-    b[0] = b'M'; b[1] = b'Z';
+    b[0] = b'M';
+    b[1] = b'Z';
     let pe_off = 0x80usize;
     b[0x3C..0x40].copy_from_slice(&(pe_off as u32).to_le_bytes());
     b[pe_off..pe_off + 4].copy_from_slice(b"PE\0\0");
     let coff = pe_off + 4;
     b[coff..coff + 2].copy_from_slice(&0x8664u16.to_le_bytes()); // machine x64
     let opt = coff + 20;
-    b[opt..opt + 2].copy_from_slice(&0x20Bu16.to_le_bytes());    // PE32+
+    b[opt..opt + 2].copy_from_slice(&0x20Bu16.to_le_bytes()); // PE32+
     b[opt + 68..opt + 70].copy_from_slice(&10u16.to_le_bytes()); // subsystem
     let h = PeHeader::parse(&b).unwrap();
     assert!(h.is_efi_application);
@@ -160,7 +165,7 @@ fn bytes_helpers_are_bounds_checked() {
     let b = [1u8, 2, 3];
     assert_eq!(bytes::u8_at(&b, 2).unwrap(), 3);
     assert!(bytes::u8_at(&b, 3).is_err());
-    assert!(bytes::u32_le(&b, 0).is_err());       // only 3 bytes
+    assert!(bytes::u32_le(&b, 0).is_err()); // only 3 bytes
     assert!(bytes::slice_at(&b, 1, 5).is_err());
     assert_eq!(bytes::u16_le(&b, 0).unwrap(), 0x0201);
 }
@@ -174,7 +179,8 @@ fn pe_with_sections(sections: &[(&[u8], &[u8])]) -> alloc::vec::Vec<u8> {
     let table = coff + 20 + opt_size;
     let mut data_at = table + 40 * sections.len();
     let mut b = alloc::vec![0u8; data_at];
-    b[0] = b'M'; b[1] = b'Z';
+    b[0] = b'M';
+    b[1] = b'Z';
     b[0x3C..0x40].copy_from_slice(&(pe_off as u32).to_le_bytes());
     b[pe_off..pe_off + 4].copy_from_slice(b"PE\0\0");
     b[coff + 2..coff + 4].copy_from_slice(&(sections.len() as u16).to_le_bytes());
@@ -199,7 +205,10 @@ fn pe_section_find_returns_the_named_section_trimmed_to_virtual_size() {
     assert_eq!(pe::section::find(&img, b".sbat").unwrap(), b"sbat,1,x\n");
     assert_eq!(pe::section::find(&img, b".text").unwrap(), b"code");
     assert!(pe::section::find(&img, b".data").is_err(), "absent section");
-    assert!(pe::section::find(&img, b".sba").is_err(), "prefix must not match");
+    assert!(
+        pe::section::find(&img, b".sba").is_err(),
+        "prefix must not match"
+    );
 }
 
 #[test]
@@ -209,10 +218,16 @@ fn pe_section_find_rejects_malformed_images() {
     // Truncated in the middle of the section table / section data.
     let data_at = 0x80 + 4 + 20 + 0xF0 + 40;
     for cut in [0x80, 0x80 + 4 + 20 + 0xF0 + 10, data_at + 4] {
-        assert!(pe::section::find(&img[..cut], b".sbat").is_err(), "cut at {cut}");
+        assert!(
+            pe::section::find(&img[..cut], b".sbat").is_err(),
+            "cut at {cut}"
+        );
     }
     // Only alignment padding cut off: the section's VirtualSize bytes are intact.
-    assert_eq!(pe::section::find(&img[..img.len() - 1], b".sbat").unwrap(), b"sbat,1,x\n");
+    assert_eq!(
+        pe::section::find(&img[..img.len() - 1], b".sbat").unwrap(),
+        b"sbat,1,x\n"
+    );
     // Section count above the PE/COFF limit.
     let mut bad = img.clone();
     let coff = 0x80 + 4;

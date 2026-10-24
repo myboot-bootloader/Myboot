@@ -18,17 +18,17 @@ extern crate alloc;
 
 use alloc::string::String;
 use alloc::vec::Vec;
-use graph::{OsKind, EntryRole, BootMethod};
+use graph::{BootMethod, EntryRole, OsKind};
 
-pub mod json;
-pub mod variables;
-pub mod esp;
 pub mod bls;
 pub mod bootspec;
+mod build;
 pub mod distros;
+pub mod esp;
+pub mod json;
 pub mod refine;
 pub mod sbat;
-mod build;
+pub mod variables;
 
 #[cfg(test)]
 extern crate std;
@@ -52,11 +52,23 @@ pub struct RawEntry {
 }
 
 impl RawEntry {
-    pub fn new(kind: OsKind, os_name: impl Into<String>, title: impl Into<String>,
-               role: EntryRole, method: BootMethod) -> Self {
+    pub fn new(
+        kind: OsKind,
+        os_name: impl Into<String>,
+        title: impl Into<String>,
+        role: EntryRole,
+        method: BootMethod,
+    ) -> Self {
         RawEntry {
-            kind, os_name: os_name.into(), title: title.into(), role, method,
-            loader: None, kernel: None, initrd: None, cmdline: None,
+            kind,
+            os_name: os_name.into(),
+            title: title.into(),
+            role,
+            method,
+            loader: None,
+            kernel: None,
+            initrd: None,
+            cmdline: None,
             volume: None,
         }
     }
@@ -84,7 +96,9 @@ pub fn scan_volume<F: ports::FileStore + ?Sized>(fs: &F, volume_id: Option<&str>
     raw.extend(bootspec::discover(fs));
     let mut raw = refine::refine_methods(raw, fs);
     if let Some(v) = volume_id {
-        for r in &mut raw { r.volume = Some(alloc::string::String::from(v)); }
+        for r in &mut raw {
+            r.volume = Some(alloc::string::String::from(v));
+        }
     }
     raw
 }
@@ -94,7 +108,8 @@ pub fn scan_volume<F: ports::FileStore + ?Sized>(fs: &F, volume_id: Option<&str>
 /// This is the multi-disk discovery the engine uses: two volumes that share a
 /// loader path stay DISTINCT, and each entry knows which volume to boot from.
 pub fn discover_multi<V: ports::VarStore>(
-    vars: &V, volumes: &[(alloc::string::String, &dyn ports::FileStore)],
+    vars: &V,
+    volumes: &[(alloc::string::String, &dyn ports::FileStore)],
 ) -> graph::BootGraph {
     let mut raw: Vec<RawEntry> = Vec::new();
     raw.extend(variables::discover(vars));
