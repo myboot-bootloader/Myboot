@@ -403,3 +403,25 @@ Options:
 - Not addressed (noted only): step 4 still reads whole loader binaries (2–3 MB) on
   volumes without a better name source. B could later use a bounded read once a ranged
   `FileStore` read exists.
+
+## 2026-10-24 — Fix: harness stop markers no longer truncate the matched line (branch feat/bug-fix)
+
+Implements part 1 of the proposal above. `pyboot/qemu.py`: the read loop is now
+`_capture(child, markers)`. After a marker matches, it reads the rest of that line
+(`expect([r"\r?\n", EOF, TIMEOUT], timeout=LINE_GRACE_SECS=2)`). So
+`no candidate could be booted (N tried)` and any future marker line reach `logparse`
+whole. `run()` behaves the same otherwise.
+
+New `tools/tests/test_qemu_capture.py` (4 tests, driven by `sh -c printf …`, no QEMU):
+- a marker mid-line gives the whole line;
+- the dead-end line parses as `NoCandidate(3)`;
+- a marker with no line ending returns within the grace period;
+- a timeout is reported.
+
+Mutation check: with the end-of-line read removed (old behaviour), 3 of the 4 fail. With
+it restored, all pass.
+
+Ran:
+- pytest 14 passed (was 10).
+- `./manage.py smoke` 6/6.
+- `./manage.py iso-test --no-ui <Ubuntu 26.04.1, Parrot 7.3>` 2/2.
