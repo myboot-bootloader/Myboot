@@ -8,7 +8,11 @@ mod imp {
     use uefi::boot;
 
     /// Lap timer over the TSC, calibrated against the firmware's `Stall`.
-    pub struct StageClock { ticks_per_us: u64, start: u64, last: u64 }
+    pub struct StageClock {
+        ticks_per_us: u64,
+        start: u64,
+        last: u64,
+    }
 
     impl StageClock {
         /// Calibrate the TSC against a 10 ms firmware stall, then start.
@@ -18,7 +22,11 @@ mod imp {
             let b = read_tsc();
             let ticks_per_us = (b.wrapping_sub(a) / 10_000).max(1);
             let now = read_tsc();
-            StageClock { ticks_per_us, start: now, last: now }
+            StageClock {
+                ticks_per_us,
+                start: now,
+                last: now,
+            }
         }
 
         /// Log the time since the previous lap and since `start`.
@@ -40,7 +48,9 @@ mod imp {
     pub struct StageClock;
 
     impl StageClock {
-        pub fn start() -> Self { StageClock }
+        pub fn start() -> Self {
+            StageClock
+        }
         pub fn lap(&mut self, _stage: &str) {}
     }
 }

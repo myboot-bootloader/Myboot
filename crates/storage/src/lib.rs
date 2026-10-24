@@ -12,9 +12,9 @@
 extern crate alloc;
 
 pub mod bytes;
+pub mod fat;
 pub mod gpt;
 pub mod mbr;
-pub mod fat;
 pub mod pe;
 
 /// A parsed partition, format-agnostic, handed up to discovery.
@@ -26,7 +26,12 @@ pub struct Partition {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PartKind { EfiSystem, Basic, Linux, Unknown }
+pub enum PartKind {
+    EfiSystem,
+    Basic,
+    Linux,
+    Unknown,
+}
 
 #[cfg(kani)]
 mod proofs;

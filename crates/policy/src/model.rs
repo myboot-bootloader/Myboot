@@ -41,7 +41,9 @@ pub enum Reason {
     ConfiguredDefault,
     LastGood,
     /// The configured/last-good choice was not bootable, so we fell back.
-    FellBackToHealthiest { skipped: String },
+    FellBackToHealthiest {
+        skipped: String,
+    },
     /// Nothing was configured; picked the single healthiest bootable entry.
     HealthiestAvailable,
 }

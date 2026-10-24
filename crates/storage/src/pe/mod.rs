@@ -7,7 +7,11 @@ pub mod section;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct PeError;
-impl From<OutOfBounds> for PeError { fn from(_: OutOfBounds) -> Self { PeError } }
+impl From<OutOfBounds> for PeError {
+    fn from(_: OutOfBounds) -> Self {
+        PeError
+    }
+}
 
 /// UEFI application PE subsystem value (IMAGE_SUBSYSTEM_EFI_APPLICATION).
 pub const SUBSYSTEM_EFI_APPLICATION: u16 = 10;
@@ -24,9 +28,13 @@ impl PeHeader {
     /// never a slice panic.
     pub fn parse(buf: &[u8]) -> Result<PeHeader, PeError> {
         // DOS header: 'MZ' magic, e_lfanew (u32) at 0x3C points to the PE header.
-        if bytes::slice_at(buf, 0, 2)? != b"MZ" { return Err(PeError); }
+        if bytes::slice_at(buf, 0, 2)? != b"MZ" {
+            return Err(PeError);
+        }
         let pe_off = bytes::u32_le(buf, 0x3C)? as usize;
-        if bytes::slice_at(buf, pe_off, 4)? != b"PE\0\0" { return Err(PeError); }
+        if bytes::slice_at(buf, pe_off, 4)? != b"PE\0\0" {
+            return Err(PeError);
+        }
         // COFF file header follows the 4-byte PE signature.
         let coff = pe_off.checked_add(4).ok_or(PeError)?;
         let machine = bytes::u16_le(buf, coff)?;

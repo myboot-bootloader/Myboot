@@ -2,10 +2,10 @@
 //! report §3.4, §3.9). The `platform` adapter implements these over uefi-rs;
 //! `mock` implements them in memory for host tests. Nothing here knows uefi.
 extern crate alloc;
+use crate::error::{IoResult, VarNamespace};
+use crate::meta::DirEntryMeta;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::error::{VarNamespace, IoResult};
-use crate::meta::DirEntryMeta;
 
 /// Read/write firmware variables (report §3.7, §3.9). Implemented by `platform`
 /// over `GetVariable`/`SetVariable`; mocked in tests.
@@ -38,5 +38,7 @@ pub trait FileStore {
     /// The filesystem's volume label, if any (e.g. an ISO's EFI-partition label).
     /// Default `None`; the UEFI adapter overrides it. Used by discovery as one
     /// source for a human-friendly OS name.
-    fn volume_label(&self) -> Option<String> { None }
+    fn volume_label(&self) -> Option<String> {
+        None
+    }
 }

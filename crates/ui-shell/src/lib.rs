@@ -15,4 +15,4 @@ pub mod commands;
 #[cfg(test)]
 extern crate std;
 
-pub use commands::{Command, parse, ShellAction, render};
+pub use commands::{parse, render, Command, ShellAction};

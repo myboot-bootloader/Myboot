@@ -8,8 +8,8 @@ pub const BG_BOT: Rgb = Rgb::new(0x0a, 0x11, 0x20);
 // Cards / panels.
 pub const CARD: Rgb = Rgb::new(0x16, 0x23, 0x3b);
 pub const CARD_BORDER: Rgb = Rgb::new(0x26, 0x37, 0x5a);
-pub const SEL: Rgb = Rgb::new(0x18, 0x31, 0x53);       // selected card fill
-pub const PANEL: Rgb = Rgb::new(0x11, 0x1d, 0x31);      // detail panel
+pub const SEL: Rgb = Rgb::new(0x18, 0x31, 0x53); // selected card fill
+pub const PANEL: Rgb = Rgb::new(0x11, 0x1d, 0x31); // detail panel
 pub const DIVIDER: Rgb = Rgb::new(0x22, 0x31, 0x4f);
 // Text.
 pub const TEXT: Rgb = Rgb::new(0xea, 0xf1, 0xfb);
@@ -27,10 +27,10 @@ pub const TEXT_DIM: Rgb = MUT;
 
 // Metrics (source pixels; text is the 8x8 font scaled by these factors).
 pub const MARGIN: usize = 40;
-pub const TITLE_SCALE: usize = 3;   // brand / big headings  (24px)
-pub const HEAD_SCALE: usize = 2;    // card titles           (16px)
-pub const BODY_SCALE: usize = 2;    // subtitles / details   (16px)
-pub const SMALL_SCALE: usize = 1;   // dense mono details    (8px)
+pub const TITLE_SCALE: usize = 3; // brand / big headings  (24px)
+pub const HEAD_SCALE: usize = 2; // card titles           (16px)
+pub const BODY_SCALE: usize = 2; // subtitles / details   (16px)
+pub const SMALL_SCALE: usize = 1; // dense mono details    (8px)
 pub const CARD_H: usize = 92;
 pub const CARD_GAP: usize = 14;
 pub const TOPBAR_H: usize = 82;

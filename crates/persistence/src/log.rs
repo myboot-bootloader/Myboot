@@ -6,7 +6,7 @@ extern crate alloc;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use graph::{EntryId, BootResult};
+use graph::{BootResult, EntryId};
 use ports::{FileStore, IoResult};
 
 pub const LOG_PATH: &str = "\\EFI\\MyBoot\\log\\boot.log";
@@ -30,7 +30,13 @@ impl LogRecord {
             Some(BootResult::Failed) => "failed",
             Some(BootResult::Unknown) | None => "-",
         };
-        format!("{}\t{}\t{}\t{}\n", self.seq, self.entry.as_str(), self.phase, r)
+        format!(
+            "{}\t{}\t{}\t{}\n",
+            self.seq,
+            self.entry.as_str(),
+            self.phase,
+            r
+        )
     }
 }
 
@@ -43,14 +49,22 @@ pub fn append_record<F: FileStore>(fs: &mut F, rec: &LogRecord) -> IoResult<()> 
 /// Parse the log back into records (for the shell's `log` command and export).
 /// Total: malformed lines are skipped, never panicked.
 pub fn parse(data: &[u8]) -> Vec<(u64, String, String, String)> {
-    let text = match core::str::from_utf8(data) { Ok(t) => t, Err(_) => return Vec::new() };
+    let text = match core::str::from_utf8(data) {
+        Ok(t) => t,
+        Err(_) => return Vec::new(),
+    };
     let mut out = Vec::new();
     for line in text.lines() {
         let mut it = line.splitn(4, '\t');
         match (it.next(), it.next(), it.next(), it.next()) {
             (Some(seq), Some(entry), Some(phase), Some(result)) => {
                 if let Ok(n) = seq.parse::<u64>() {
-                    out.push((n, String::from(entry), String::from(phase), String::from(result)));
+                    out.push((
+                        n,
+                        String::from(entry),
+                        String::from(phase),
+                        String::from(result),
+                    ));
                 }
             }
             _ => {} // skip malformed line
@@ -62,15 +76,33 @@ pub fn parse(data: &[u8]) -> Vec<(u64, String, String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use graph::{EntryId, OsKind, EntryRole, BootResult};
+    use graph::{BootResult, EntryId, EntryRole, OsKind};
     use ports::mock::MockFileStore;
 
     #[test]
     fn append_then_parse_roundtrips_records() {
         let mut fs = MockFileStore::new();
         let id = EntryId::derive(OsKind::NixOs, &EntryRole::Generation(128), None);
-        append_record(&mut fs, &LogRecord { seq: 1, entry: id.clone(), phase: "staged", result: None }).unwrap();
-        append_record(&mut fs, &LogRecord { seq: 2, entry: id.clone(), phase: "confirmed", result: Some(BootResult::Confirmed) }).unwrap();
+        append_record(
+            &mut fs,
+            &LogRecord {
+                seq: 1,
+                entry: id.clone(),
+                phase: "staged",
+                result: None,
+            },
+        )
+        .unwrap();
+        append_record(
+            &mut fs,
+            &LogRecord {
+                seq: 2,
+                entry: id.clone(),
+                phase: "confirmed",
+                result: Some(BootResult::Confirmed),
+            },
+        )
+        .unwrap();
         let raw = fs.read(LOG_PATH).unwrap();
         let recs = parse(&raw);
         assert_eq!(recs.len(), 2);

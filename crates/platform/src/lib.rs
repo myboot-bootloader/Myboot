@@ -13,13 +13,13 @@
 #![no_main]
 extern crate alloc;
 
-pub mod vars;
 pub mod fs;
 pub mod gop;
 pub mod secureboot;
+pub mod vars;
 pub mod volume;
 
-pub use vars::UefiVarStore;
 pub use fs::UefiFileStore;
 pub use gop::Framebuffer;
-pub use volume::{Volume, MultiVolume, volumes, own_volume_id};
+pub use vars::UefiVarStore;
+pub use volume::{own_volume_id, volumes, MultiVolume, Volume};

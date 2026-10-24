@@ -2,10 +2,10 @@
 //! (report §3.3). We look for the Windows boot manager and the removable-media
 //! fallback loader; richer per-distro scanning is layered on by BLS/bootspec.
 extern crate alloc;
-use alloc::vec::Vec;
-use ports::FileStore;
-use graph::{OsKind, EntryRole, BootMethod};
 use crate::RawEntry;
+use alloc::vec::Vec;
+use graph::{BootMethod, EntryRole, OsKind};
+use ports::FileStore;
 
 /// Canonical Windows loader path (verified fact: bootmgfw.efi, NOT bootmgr.efi).
 pub const WINDOWS_LOADER: &str = "\\EFI\\Microsoft\\Boot\\bootmgfw.efi";
@@ -16,8 +16,13 @@ pub fn discover<F: FileStore + ?Sized>(fs: &F) -> Vec<RawEntry> {
     let mut out = Vec::new();
 
     if fs.exists(WINDOWS_LOADER) {
-        let mut e = RawEntry::new(OsKind::Windows, "Windows", "Windows Boot Manager",
-                                  EntryRole::Default, BootMethod::WindowsBootManager);
+        let mut e = RawEntry::new(
+            OsKind::Windows,
+            "Windows",
+            "Windows Boot Manager",
+            EntryRole::Default,
+            BootMethod::WindowsBootManager,
+        );
         e.loader = Some(WINDOWS_LOADER.into());
         out.push(e);
     }
@@ -30,11 +35,18 @@ pub fn discover<F: FileStore + ?Sized>(fs: &F) -> Vec<RawEntry> {
         // volume tag added later keeps multiple entries distinct.
         let (os_name, title) = match media_name(fs) {
             Some(name) => (name.clone(), name),
-            None => (alloc::string::String::from("EFI"),
-                     alloc::string::String::from("EFI Fallback Loader")),
+            None => (
+                alloc::string::String::from("EFI"),
+                alloc::string::String::from("EFI Fallback Loader"),
+            ),
         };
-        let mut e = RawEntry::new(OsKind::GenericEfi, os_name, title,
-                                  EntryRole::Fallback, BootMethod::EfiChainload);
+        let mut e = RawEntry::new(
+            OsKind::GenericEfi,
+            os_name,
+            title,
+            EntryRole::Fallback,
+            BootMethod::EfiChainload,
+        );
         e.loader = Some(FALLBACK_LOADER.into());
         out.push(e);
     }
@@ -67,7 +79,11 @@ fn media_name<F: FileStore + ?Sized>(fs: &F) -> Option<alloc::string::String> {
         }
     }
     // 3. The grub config, if it's on this volume, names the distro.
-    for path in ["\\EFI\\BOOT\\grub.cfg", "\\boot\\grub\\grub.cfg", "\\EFI\\BOOT\\grub\\grub.cfg"] {
+    for path in [
+        "\\EFI\\BOOT\\grub.cfg",
+        "\\boot\\grub\\grub.cfg",
+        "\\EFI\\BOOT\\grub\\grub.cfg",
+    ] {
         if let Ok(bytes) = fs.read(path) {
             if let Some(name) = distro_from_grub_cfg(&bytes) {
                 return Some(name);
@@ -100,7 +116,16 @@ fn media_name<F: FileStore + ?Sized>(fs: &F) -> Option<alloc::string::String> {
     // 5. The FAT volume label (the "ISO volume label"), if it's a real name.
     if let Some(label) = fs.volume_label() {
         let l = label.trim();
-        let generic = ["", "ESP", "EFI", "BOOT", "CDROM", "ISOIMAGE", "SYSTEM", "QEMU VVFAT"];
+        let generic = [
+            "",
+            "ESP",
+            "EFI",
+            "BOOT",
+            "CDROM",
+            "ISOIMAGE",
+            "SYSTEM",
+            "QEMU VVFAT",
+        ];
         if !generic.iter().any(|g| l.eq_ignore_ascii_case(g)) && l.len() >= 2 {
             return Some(l.chars().take(48).collect());
         }
@@ -118,7 +143,9 @@ fn decode_text(bytes: &[u8]) -> Option<alloc::string::String> {
             .collect();
         return Some(alloc::string::String::from_utf16_lossy(&u16s));
     }
-    core::str::from_utf8(bytes).ok().map(alloc::string::String::from)
+    core::str::from_utf8(bytes)
+        .ok()
+        .map(alloc::string::String::from)
 }
 
 /// A `BOOT.CSV` line is `loader,label,options,description`; the label is the name.
@@ -162,7 +189,9 @@ fn contains_ascii_ci(hay: &[u8], needle: &[u8]) -> bool {
 /// Loader binaries `media_name` inspects, most distro-specific first: the
 /// distro's own GRUB, then the fallback loader (often shim), then shim.
 const LOADER_SCAN_ORDER: [&str; 3] = [
-    "\\EFI\\BOOT\\grubx64.efi", "\\EFI\\BOOT\\BOOTX64.EFI", "\\EFI\\BOOT\\shimx64.efi",
+    "\\EFI\\BOOT\\grubx64.efi",
+    "\\EFI\\BOOT\\BOOTX64.EFI",
+    "\\EFI\\BOOT\\shimx64.efi",
 ];
 
 /// Known distro markers to look for in a grub.cfg. Ordered so specific spins are
@@ -180,7 +209,7 @@ pub(crate) const DISTRO_MARKERS: &[(&str, &str)] = &[
     ("endeavour", "EndeavourOS"),
     ("nixos", "NixOS"),
     ("fedora", "Fedora"),
-    ("casper", "Ubuntu"),   // Ubuntu's live boot dir
+    ("casper", "Ubuntu"), // Ubuntu's live boot dir
     ("ubuntu", "Ubuntu"),
     ("archiso", "Arch Linux"),
     ("archlinux", "Arch Linux"),
@@ -243,7 +272,10 @@ mod tests {
             .with_file("\\.disk\\info", info);
         let e = discover(&fs);
         assert_eq!(e.len(), 1);
-        assert_eq!(e[0].title, "Ubuntu 26.04.1 LTS", "clean product name, no codename/release suffix");
+        assert_eq!(
+            e[0].title, "Ubuntu 26.04.1 LTS",
+            "clean product name, no codename/release suffix"
+        );
         assert_eq!(e[0].loader.as_deref(), Some(FALLBACK_LOADER));
     }
 
@@ -269,7 +301,8 @@ mod tests {
     #[test]
     fn names_parrot_from_grub_cfg_over_debian_base() {
         // Parrot is Debian-based; the specific marker must win over "debian".
-        let cfg = b"# Parrot home Live Boot Menu\nmenuentry 'Parrot' { linux /live/vmlinuz boot=live }\n";
+        let cfg =
+            b"# Parrot home Live Boot Menu\nmenuentry 'Parrot' { linux /live/vmlinuz boot=live }\n";
         let fs = MockFileStore::new()
             .with_file(FALLBACK_LOADER, b"MZ")
             .with_file("\\boot\\grub\\grub.cfg", cfg);
@@ -285,7 +318,10 @@ mod tests {
             .with_file(FALLBACK_LOADER, b"MZ")
             .with_file("\\EFI\\BOOT\\BOOT.CSV", csv);
         let e = discover(&fs);
-        assert_eq!(e[0].title, "Ubuntu", "bare 'ubuntu' label prettified via marker table");
+        assert_eq!(
+            e[0].title, "Ubuntu",
+            "bare 'ubuntu' label prettified via marker table"
+        );
     }
 
     #[test]
@@ -295,7 +331,10 @@ mod tests {
         loader.extend_from_slice(b"prefix=(cd0)/casper stuff \x00\x01");
         let fs = MockFileStore::new().with_file(FALLBACK_LOADER, &loader);
         let e = discover(&fs);
-        assert_eq!(e[0].title, "Ubuntu", "casper marker in the binary maps to Ubuntu");
+        assert_eq!(
+            e[0].title, "Ubuntu",
+            "casper marker in the binary maps to Ubuntu"
+        );
     }
 
     /// A minimal PE image whose only section is `.sbat` holding `sbat`, followed
@@ -306,7 +345,8 @@ mod tests {
         let table = coff + 20 + opt_size;
         let data_at = table + 40;
         let mut b = alloc::vec![0u8; data_at];
-        b[0] = b'M'; b[1] = b'Z';
+        b[0] = b'M';
+        b[1] = b'Z';
         b[0x3C..0x40].copy_from_slice(&(pe_off as u32).to_le_bytes());
         b[pe_off..pe_off + 4].copy_from_slice(b"PE\0\0");
         b[coff + 2..coff + 4].copy_from_slice(&1u16.to_le_bytes());
@@ -325,22 +365,33 @@ mod tests {
         // The real Parrot 7.3 layout: BOOTX64.EFI is Debian's signed shim, the
         // Parrot identity is only in grubx64.efi. A shim-first substring scan
         // named this "Debian".
-        let shim = pe_with_sbat(b"sbat,1,SBAT Version,sbat,1,x\nshim.debian,1,Debian,shim,15.8,x\n",
-                                b" Debian Secure Boot CA ");
+        let shim = pe_with_sbat(
+            b"sbat,1,SBAT Version,sbat,1,x\nshim.debian,1,Debian,shim,15.8,x\n",
+            b" Debian Secure Boot CA ",
+        );
         let grub = pe_with_sbat(b"sbat,1,x\ngrub.debian,5,Debian,grub2,2.14-2parrot3,x\n\
 grub.debian14,1,Debian,grub2,2.14-2parrot3,x\ngrub.parrot,1,Parrot Security,grub2,2.14-2parrot3,x\n", b"");
         let fs = MockFileStore::new()
             .with_file(FALLBACK_LOADER, &shim)
             .with_file("\\EFI\\BOOT\\grubx64.efi", &grub)
-            .with_file("\\boot\\grub\\grub.cfg", b"search --set=root --file /.disk/info\nconfigfile ($root)/boot/grub/grub.cfg\n");
+            .with_file(
+                "\\boot\\grub\\grub.cfg",
+                b"search --set=root --file /.disk/info\nconfigfile ($root)/boot/grub/grub.cfg\n",
+            );
         assert_eq!(discover(&fs)[0].title, "Parrot OS");
     }
 
     #[test]
     fn ubuntu_live_iso_is_named_from_grub_sbat() {
-        let shim = pe_with_sbat(b"sbat,1,x\nshim.ubuntu,1,Ubuntu,shim,15.8-0ubuntu2,x\n", b"");
-        let grub = pe_with_sbat(b"sbat,1,x\ngrub.ubuntu,2,Ubuntu,grub2,2.14-2ubuntu1,x\n\
-grub.peimage,2,Canonical,grub2,2.14-2ubuntu1,x\n", b"");
+        let shim = pe_with_sbat(
+            b"sbat,1,x\nshim.ubuntu,1,Ubuntu,shim,15.8-0ubuntu2,x\n",
+            b"",
+        );
+        let grub = pe_with_sbat(
+            b"sbat,1,x\ngrub.ubuntu,2,Ubuntu,grub2,2.14-2ubuntu1,x\n\
+grub.peimage,2,Canonical,grub2,2.14-2ubuntu1,x\n",
+            b"",
+        );
         let fs = MockFileStore::new()
             .with_file(FALLBACK_LOADER, &shim)
             .with_file("\\EFI\\BOOT\\grubx64.efi", &grub);
@@ -351,8 +402,10 @@ grub.peimage,2,Canonical,grub2,2.14-2ubuntu1,x\n", b"");
     fn sbat_beats_substring_false_positives() {
         // "details" contains the marker "tails", which outranks "debian" in the
         // substring table. SBAT names the vendor exactly, so it wins.
-        let loader = pe_with_sbat(b"sbat,1,x\nshim.debian,1,Debian,shim,15.8,x\n",
-                                  b" see details at https://example.org ");
+        let loader = pe_with_sbat(
+            b"sbat,1,x\nshim.debian,1,Debian,shim,15.8,x\n",
+            b" see details at https://example.org ",
+        );
         let fs = MockFileStore::new().with_file(FALLBACK_LOADER, &loader);
         assert_eq!(discover(&fs)[0].title, "Debian");
     }

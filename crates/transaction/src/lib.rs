@@ -26,11 +26,22 @@ extern crate std;
 
 /// The phases — identical set to the TLA+ `Phases`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Phase { Idle, Selected, Validated, Staged, Launched, Confirmed, Failed, Recovery }
+pub enum Phase {
+    Idle,
+    Selected,
+    Validated,
+    Staged,
+    Launched,
+    Confirmed,
+    Failed,
+    Recovery,
+}
 
 impl Phase {
     /// The two accepting/terminal states (TLA+ `Resolved`).
-    pub fn is_terminal(self) -> bool { matches!(self, Phase::Confirmed | Phase::Recovery) }
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Phase::Confirmed | Phase::Recovery)
+    }
 }
 
 /// A side effect the engine must apply to firmware/persistence at a transition.
@@ -47,7 +58,11 @@ pub enum Effect {
 /// Errors from driving the machine out of order (should not happen if the engine
 /// follows the pipeline; surfaced for defensive testing).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum TxError { WrongPhase, NotBootable, NoEntrySelected }
+pub enum TxError {
+    WrongPhase,
+    NotBootable,
+    NoEntrySelected,
+}
 
 /// The transaction state. `tries_left` mirrors the TLA+ function
 /// `triesLeft[e]`; it is loaded from persistence at boot and saved via effects.
@@ -64,17 +79,30 @@ pub struct Transaction {
 impl Transaction {
     /// Start a fresh transaction. `tries_left` is seeded from persisted state;
     /// entries not present default to `max_tries` on first use.
-    pub fn new(max_tries: u8, tries_left: BTreeMap<EntryId, u8>, last_good: Option<EntryId>) -> Self {
+    pub fn new(
+        max_tries: u8,
+        tries_left: BTreeMap<EntryId, u8>,
+        last_good: Option<EntryId>,
+    ) -> Self {
         Transaction {
-            phase: Phase::Idle, selected: None,
-            tries_left, last_good, committed: None,
+            phase: Phase::Idle,
+            selected: None,
+            tries_left,
+            last_good,
+            committed: None,
             max_tries: max_tries.max(1),
         }
     }
 
-    pub fn phase(&self) -> Phase { self.phase }
-    pub fn selected(&self) -> Option<&EntryId> { self.selected.as_ref() }
-    pub fn committed(&self) -> Option<&EntryId> { self.committed.as_ref() }
+    pub fn phase(&self) -> Phase {
+        self.phase
+    }
+    pub fn selected(&self) -> Option<&EntryId> {
+        self.selected.as_ref()
+    }
+    pub fn committed(&self) -> Option<&EntryId> {
+        self.committed.as_ref()
+    }
     pub fn tries_left(&self, id: &EntryId) -> u8 {
         *self.tries_left.get(id).unwrap_or(&self.max_tries)
     }
@@ -88,8 +116,12 @@ impl Transaction {
 
     /// `Select(e)` — from Idle, choose a bootable entry.
     pub fn select(&mut self, graph: &BootGraph, id: &EntryId) -> Result<(), TxError> {
-        if self.phase != Phase::Idle { return Err(TxError::WrongPhase); }
-        if !self.bootable(graph, id) { return Err(TxError::NotBootable); }
+        if self.phase != Phase::Idle {
+            return Err(TxError::WrongPhase);
+        }
+        if !self.bootable(graph, id) {
+            return Err(TxError::NotBootable);
+        }
         self.selected = Some(id.clone());
         self.phase = Phase::Selected;
         Ok(())
@@ -97,9 +129,13 @@ impl Transaction {
 
     /// `Validate` — from Selected, confirm the selection is still bootable.
     pub fn validate(&mut self, graph: &BootGraph) -> Result<(), TxError> {
-        if self.phase != Phase::Selected { return Err(TxError::WrongPhase); }
+        if self.phase != Phase::Selected {
+            return Err(TxError::WrongPhase);
+        }
         let id = self.selected.clone().ok_or(TxError::NoEntrySelected)?;
-        if !self.bootable(graph, &id) { return Err(TxError::NotBootable); }
+        if !self.bootable(graph, &id) {
+            return Err(TxError::NotBootable);
+        }
         self.phase = Phase::Validated;
         Ok(())
     }
@@ -107,7 +143,9 @@ impl Transaction {
     /// `Stage` — CHARGE THE ATTEMPT (decrement tries) and move to Staged.
     /// Returns the effect the engine must persist BEFORE handoff.
     pub fn stage(&mut self) -> Result<Effect, TxError> {
-        if self.phase != Phase::Validated { return Err(TxError::WrongPhase); }
+        if self.phase != Phase::Validated {
+            return Err(TxError::WrongPhase);
+        }
         let id = self.selected.clone().ok_or(TxError::NoEntrySelected)?;
         let n = self.tries_left.entry(id.clone()).or_insert(self.max_tries);
         *n = n.saturating_sub(1);
@@ -118,7 +156,9 @@ impl Transaction {
     /// `Launch` — from Staged, hand off. (The actual ExitBootServices + provider
     /// boot happens in the engine; this records the state transition.)
     pub fn launch(&mut self) -> Result<(), TxError> {
-        if self.phase != Phase::Staged { return Err(TxError::WrongPhase); }
+        if self.phase != Phase::Staged {
+            return Err(TxError::WrongPhase);
+        }
         self.phase = Phase::Launched;
         Ok(())
     }
@@ -126,7 +166,9 @@ impl Transaction {
     /// `ConfirmSuccess` — the OS cooperated; commit and restore this entry's tries
     /// to full. Returns the effect to persist last-good.
     pub fn confirm_success(&mut self) -> Result<Effect, TxError> {
-        if self.phase != Phase::Launched { return Err(TxError::WrongPhase); }
+        if self.phase != Phase::Launched {
+            return Err(TxError::WrongPhase);
+        }
         let id = self.selected.clone().ok_or(TxError::NoEntrySelected)?;
         self.tries_left.insert(id.clone(), self.max_tries);
         self.last_good = Some(id.clone());
@@ -138,7 +180,9 @@ impl Transaction {
     /// `DetectFailure` — the boot did not confirm. Move to Failed. From here the
     /// caller MUST call `resolve` (which is always enabled — NoDeadEnd).
     pub fn detect_failure(&mut self) -> Result<(), TxError> {
-        if self.phase != Phase::Launched { return Err(TxError::WrongPhase); }
+        if self.phase != Phase::Launched {
+            return Err(TxError::WrongPhase);
+        }
         self.phase = Phase::Failed;
         Ok(())
     }
@@ -149,14 +193,18 @@ impl Transaction {
     ///
     /// Returns the fallback entry to try next (RollBack) or `None` (Recovery).
     pub fn resolve(&mut self, graph: &BootGraph) -> Result<Option<EntryId>, TxError> {
-        if self.phase != Phase::Failed { return Err(TxError::WrongPhase); }
+        if self.phase != Phase::Failed {
+            return Err(TxError::WrongPhase);
+        }
         match self.pick_fallback(graph) {
-            Some(fallback) => { // RollBack
+            Some(fallback) => {
+                // RollBack
                 self.selected = Some(fallback.clone());
                 self.phase = Phase::Selected;
                 Ok(Some(fallback))
             }
-            None => { // Recover
+            None => {
+                // Recover
                 self.phase = Phase::Recovery;
                 Ok(None)
             }
@@ -172,10 +220,13 @@ impl Transaction {
     ///   4. None — nothing bootable remains, so the caller enters Recovery.
     fn pick_fallback(&self, graph: &BootGraph) -> Option<EntryId> {
         if let Some(lg) = &self.last_good {
-            if self.bootable(graph, lg) { return Some(lg.clone()); }
+            if self.bootable(graph, lg) {
+                return Some(lg.clone());
+            }
         }
         let failed = self.selected.clone();
-        if let Some(other) = graph.entries()
+        if let Some(other) = graph
+            .entries()
             .map(|e| e.id.clone())
             .find(|id| Some(id) != failed.as_ref() && self.bootable(graph, id))
         {
@@ -195,8 +246,9 @@ impl Transaction {
     pub fn has_way_forward(&self, _graph: &BootGraph) -> bool {
         match self.phase {
             // Non-terminal working phases always have their next transition.
-            Phase::Idle | Phase::Selected | Phase::Validated
-            | Phase::Staged | Phase::Launched => true,
+            Phase::Idle | Phase::Selected | Phase::Validated | Phase::Staged | Phase::Launched => {
+                true
+            }
             // From Failed, resolve() always advances (RollBack or Recover).
             Phase::Failed => true,
             // Terminal states are resolved, not dead-ends.
@@ -208,23 +260,42 @@ impl Transaction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use graph::{BootGraph, DiskNode, DiskId, OsNode, OsKind, EntryRole, BootMethod, BootEntry, Health, Reason};
     use alloc::string::ToString;
     use alloc::vec::Vec;
+    use graph::{
+        BootEntry, BootGraph, BootMethod, DiskId, DiskNode, EntryRole, Health, OsKind, OsNode,
+        Reason,
+    };
 
     fn healthy(g: u32) -> BootEntry {
-        let mut e = BootEntry::new(OsKind::NixOs, "gen", EntryRole::Generation(g), BootMethod::NixGeneration);
-        e.health = Health::Healthy; e
+        let mut e = BootEntry::new(
+            OsKind::NixOs,
+            "gen",
+            EntryRole::Generation(g),
+            BootMethod::NixGeneration,
+        );
+        e.health = Health::Healthy;
+        e
     }
     fn graph_of(entries: Vec<BootEntry>) -> BootGraph {
         let mut gr = BootGraph::new();
         let mut os = OsNode::new(OsKind::NixOs, "NixOS");
-        for e in entries { os.push(e); }
-        gr.add_disk(DiskNode { id: DiskId(0), label: "d".to_string(), systems: alloc::vec![os] });
+        for e in entries {
+            os.push(e);
+        }
+        gr.add_disk(DiskNode {
+            id: DiskId(0),
+            label: "d".to_string(),
+            systems: alloc::vec![os],
+        });
         gr
     }
-    fn id(g: u32) -> EntryId { EntryId::derive(OsKind::NixOs, &EntryRole::Generation(g), None) }
-    fn tx() -> Transaction { Transaction::new(2, BTreeMap::new(), None) }
+    fn id(g: u32) -> EntryId {
+        EntryId::derive(OsKind::NixOs, &EntryRole::Generation(g), None)
+    }
+    fn tx() -> Transaction {
+        Transaction::new(2, BTreeMap::new(), None)
+    }
 
     #[test]
     fn happy_path_reaches_confirmed_and_charges_then_restores() {
@@ -235,7 +306,10 @@ mod tests {
         assert_eq!(t.stage().unwrap(), Effect::ChargeAttempt(id(128)));
         assert_eq!(t.tries_left(&id(128)), 1, "attempt charged before handoff");
         t.launch().unwrap();
-        assert_eq!(t.confirm_success().unwrap(), Effect::RecordLastGood(id(128)));
+        assert_eq!(
+            t.confirm_success().unwrap(),
+            Effect::RecordLastGood(id(128))
+        );
         assert_eq!(t.phase(), Phase::Confirmed);
         assert!(t.phase().is_terminal());
         assert_eq!(t.tries_left(&id(128)), 2, "tries restored on success");
@@ -264,8 +338,14 @@ mod tests {
         let mut t = Transaction::new(2, BTreeMap::new(), Some(id(127)));
         t.select(&gr, &id(128)).unwrap();
         t.validate(&gr).unwrap();
-        t.stage().unwrap(); t.launch().unwrap(); t.detect_failure().unwrap();
-        assert_eq!(t.resolve(&gr).unwrap(), Some(id(127)), "prefer last-good fallback");
+        t.stage().unwrap();
+        t.launch().unwrap();
+        t.detect_failure().unwrap();
+        assert_eq!(
+            t.resolve(&gr).unwrap(),
+            Some(id(127)),
+            "prefer last-good fallback"
+        );
     }
 
     #[test]
@@ -275,7 +355,7 @@ mod tests {
         let mut t = Transaction::new(1, BTreeMap::new(), None);
         t.select(&gr, &id(128)).unwrap();
         t.validate(&gr).unwrap();
-        t.stage().unwrap();      // charges: tries 1 -> 0
+        t.stage().unwrap(); // charges: tries 1 -> 0
         t.launch().unwrap();
         t.detect_failure().unwrap();
         // no bootable entry remains → Recover, never a dead-end
@@ -286,7 +366,8 @@ mod tests {
 
     #[test]
     fn cannot_select_unbootable_entry() {
-        let mut bad = healthy(128); bad.health = Health::Unbootable(Reason::new("missing"));
+        let mut bad = healthy(128);
+        bad.health = Health::Unbootable(Reason::new("missing"));
         let gr = graph_of(alloc::vec![bad]);
         let mut t = tx();
         assert_eq!(t.select(&gr, &id(128)), Err(TxError::NotBootable));
@@ -297,6 +378,6 @@ mod tests {
         let gr = graph_of(alloc::vec![healthy(128)]);
         let mut t = tx();
         assert_eq!(t.validate(&gr), Err(TxError::WrongPhase)); // not selected yet
-        assert_eq!(t.launch(), Err(TxError::WrongPhase));      // not staged yet
+        assert_eq!(t.launch(), Err(TxError::WrongPhase)); // not staged yet
     }
 }

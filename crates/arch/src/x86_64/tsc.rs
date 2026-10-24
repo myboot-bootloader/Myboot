@@ -7,5 +7,7 @@
 pub fn read_tsc() -> u64 {
     // SAFETY: RDTSC exists on every x86_64 CPU and has no memory effects.
     #[allow(unused_unsafe)]
-    unsafe { core::arch::x86_64::_rdtsc() }
+    unsafe {
+        core::arch::x86_64::_rdtsc()
+    }
 }

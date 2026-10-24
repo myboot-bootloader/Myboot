@@ -12,8 +12,8 @@ use graph::{BootGraph, EntryId};
 pub struct DiagItem {
     pub id: EntryId,
     pub title: String,
-    pub ok: bool,          // did/does this entry look bootable?
-    pub bootable: bool,    // can we actually boot it now?
+    pub ok: bool,       // did/does this entry look bootable?
+    pub bootable: bool, // can we actually boot it now?
 }
 
 /// The recovery view: the diagnosis list, the recommended entry, and a set of
@@ -27,7 +27,11 @@ pub struct Recovery {
 
 /// Input outcomes for the recovery screen.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RecoveryOutcome { Idle, Boot(EntryId), Back }
+pub enum RecoveryOutcome {
+    Idle,
+    Boot(EntryId),
+    Back,
+}
 
 impl Recovery {
     /// Build from the Boot Graph. `failed` (if any) is the entry whose boot did not
@@ -61,24 +65,51 @@ impl Recovery {
         if let Some(f) = failed {
             diagnostics.push((String::from("failed"), String::from(f.as_str())));
         }
-        diagnostics.push((String::from("result"),
-            if bootable > 0 { String::from("fallback available") } else { String::from("no candidate") }));
+        diagnostics.push((
+            String::from("result"),
+            if bootable > 0 {
+                String::from("fallback available")
+            } else {
+                String::from("no candidate")
+            },
+        ));
 
-        Recovery { items, diagnostics, recommended, cursor }
+        Recovery {
+            items,
+            diagnostics,
+            recommended,
+            cursor,
+        }
     }
 
-    pub fn items(&self) -> &[DiagItem] { &self.items }
-    pub fn diagnostics(&self) -> &[(String, String)] { &self.diagnostics }
-    pub fn recommended(&self) -> Option<usize> { self.recommended }
-    pub fn cursor(&self) -> usize { self.cursor }
-    pub fn selected(&self) -> Option<&DiagItem> { self.items.get(self.cursor) }
+    pub fn items(&self) -> &[DiagItem] {
+        &self.items
+    }
+    pub fn diagnostics(&self) -> &[(String, String)] {
+        &self.diagnostics
+    }
+    pub fn recommended(&self) -> Option<usize> {
+        self.recommended
+    }
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+    pub fn selected(&self) -> Option<&DiagItem> {
+        self.items.get(self.cursor)
+    }
 
     /// Handle Up/Down/Enter/Escape (same event enum as the menu).
     pub fn handle(&mut self, ev: crate::menu::InputEvent) -> RecoveryOutcome {
         use crate::menu::InputEvent::*;
         match ev {
-            Up => { self.move_cursor(-1); RecoveryOutcome::Idle }
-            Down => { self.move_cursor(1); RecoveryOutcome::Idle }
+            Up => {
+                self.move_cursor(-1);
+                RecoveryOutcome::Idle
+            }
+            Down => {
+                self.move_cursor(1);
+                RecoveryOutcome::Idle
+            }
             Enter | Timeout => match self.selected() {
                 Some(it) if it.bootable => RecoveryOutcome::Boot(it.id.clone()),
                 _ => RecoveryOutcome::Idle,
@@ -89,12 +120,16 @@ impl Recovery {
     }
 
     fn move_cursor(&mut self, delta: isize) {
-        if self.items.is_empty() { return; }
+        if self.items.is_empty() {
+            return;
+        }
         let n = self.items.len() as isize;
         let mut i = self.cursor as isize;
         for _ in 0..n {
             i = (i + delta).rem_euclid(n);
-            if self.items[i as usize].bootable { break; }
+            if self.items[i as usize].bootable {
+                break;
+            }
         }
         self.cursor = i as usize;
     }
@@ -109,20 +144,40 @@ fn int(n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use graph::{DiskNode, OsNode, BootEntry, OsKind, EntryRole, BootMethod, DiskId, Health, Reason};
     use alloc::vec;
+    use graph::{
+        BootEntry, BootMethod, DiskId, DiskNode, EntryRole, Health, OsKind, OsNode, Reason,
+    };
 
     fn graph_with(failed_unbootable: bool) -> (BootGraph, EntryId) {
         let mut g = BootGraph::new();
         let mut os = OsNode::new(OsKind::NixOs, "NixOS");
-        let mut cur = BootEntry::new(OsKind::NixOs, "NixOS Gen 128", EntryRole::Generation(128), BootMethod::NixGeneration);
-        cur.health = if failed_unbootable { Health::Unbootable(Reason::new("no confirm")) } else { Health::Healthy };
+        let mut cur = BootEntry::new(
+            OsKind::NixOs,
+            "NixOS Gen 128",
+            EntryRole::Generation(128),
+            BootMethod::NixGeneration,
+        );
+        cur.health = if failed_unbootable {
+            Health::Unbootable(Reason::new("no confirm"))
+        } else {
+            Health::Healthy
+        };
         let failed_id = cur.id.clone();
         os.push(cur);
-        let mut prev = BootEntry::new(OsKind::NixOs, "NixOS Gen 127", EntryRole::Generation(127), BootMethod::NixGeneration);
+        let mut prev = BootEntry::new(
+            OsKind::NixOs,
+            "NixOS Gen 127",
+            EntryRole::Generation(127),
+            BootMethod::NixGeneration,
+        );
         prev.health = Health::Healthy;
         os.push(prev);
-        g.add_disk(DiskNode { id: DiskId(0), label: "d".into(), systems: vec![os] });
+        g.add_disk(DiskNode {
+            id: DiskId(0),
+            label: "d".into(),
+            systems: vec![os],
+        });
         (g, failed_id)
     }
 
@@ -132,7 +187,10 @@ mod tests {
         let r = Recovery::from_graph(&g, Some(&failed));
         let rec = r.recommended().expect("a fallback exists");
         assert_eq!(r.items()[rec].title, "NixOS Gen 127");
-        assert!(r.items()[0].bootable == false || !r.items()[0].ok, "failed entry not marked ok");
+        assert!(
+            r.items()[0].bootable == false || !r.items()[0].ok,
+            "failed entry not marked ok"
+        );
     }
 
     #[test]
@@ -143,6 +201,9 @@ mod tests {
             RecoveryOutcome::Boot(id) => assert_eq!(id.as_str().contains("127") || true, true),
             o => panic!("expected Boot, got {o:?}"),
         }
-        assert_eq!(r.handle(crate::menu::InputEvent::Escape), RecoveryOutcome::Back);
+        assert_eq!(
+            r.handle(crate::menu::InputEvent::Escape),
+            RecoveryOutcome::Back
+        );
     }
 }

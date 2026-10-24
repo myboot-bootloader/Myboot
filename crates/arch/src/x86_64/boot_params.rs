@@ -42,8 +42,8 @@ pub struct E820Entry {
 pub mod e820 {
     pub const RAM: u32 = 1;
     pub const RESERVED: u32 = 2;
-    pub const ACPI: u32 = 3;      // ACPI reclaimable
-    pub const NVS: u32 = 4;       // ACPI NVS
+    pub const ACPI: u32 = 3; // ACPI reclaimable
+    pub const NVS: u32 = 4; // ACPI NVS
     pub const UNUSABLE: u32 = 5;
 }
 
@@ -64,7 +64,7 @@ pub struct SetupHeader {
     pub root_dev: u16,
     pub boot_flag: u16,
     pub jump: u16,
-    pub header: u32,           // "HdrS"
+    pub header: u32, // "HdrS"
     pub version: u16,
     pub realmode_swtch: u32,
     pub start_sys_seg: u16,
@@ -73,13 +73,13 @@ pub struct SetupHeader {
     pub loadflags: u8,
     pub setup_move_size: u16,
     pub code32_start: u32,
-    pub ramdisk_image: u32,    // initrd physical address
-    pub ramdisk_size: u32,     // initrd size in bytes
+    pub ramdisk_image: u32, // initrd physical address
+    pub ramdisk_size: u32,  // initrd size in bytes
     pub bootsect_kludge: u32,
     pub heap_end_ptr: u16,
     pub ext_loader_ver: u8,
     pub ext_loader_type: u8,
-    pub cmd_line_ptr: u32,     // physical address of the NUL-terminated cmdline
+    pub cmd_line_ptr: u32, // physical address of the NUL-terminated cmdline
     pub initrd_addr_max: u32,
     pub kernel_alignment: u32,
     pub relocatable_kernel: u8,
@@ -100,7 +100,7 @@ pub struct SetupHeader {
 impl SetupHeader {
     /// True if this looks like a valid, bootable x86 kernel image header.
     pub fn is_valid(&self) -> bool {
-        let magic = self.header;      // avoid unaligned reference to packed field
+        let magic = self.header; // avoid unaligned reference to packed field
         let flag = self.boot_flag;
         magic == HDRS_MAGIC && flag == 0xAA55
     }
@@ -120,23 +120,34 @@ pub struct BootParams {
     bytes: [u8; 4096],
 }
 
-impl Default for BootParams { fn default() -> Self { BootParams { bytes: [0u8; 4096] } } }
+impl Default for BootParams {
+    fn default() -> Self {
+        BootParams { bytes: [0u8; 4096] }
+    }
+}
 
 impl BootParams {
     // Field offsets within the zero page (arch/x86/include/uapi/asm/bootparam.h).
     const E820_ENTRIES_OFF: usize = 0x1e8; // u8 count
-    const E820_TABLE_OFF: usize = 0x2d0;   // E820Entry[E820_MAX_ENTRIES]
+    const E820_TABLE_OFF: usize = 0x2d0; // E820Entry[E820_MAX_ENTRIES]
     const SETUP_HEADER_OFF: usize = 0x1f1; // setup_header
 
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Raw base pointer of the zero page (what goes into %rsi at handoff).
-    pub fn as_ptr(&self) -> *const u8 { self.bytes.as_ptr() }
+    pub fn as_ptr(&self) -> *const u8 {
+        self.bytes.as_ptr()
+    }
 
     /// Copy a validated setup_header into the zero page at offset 0x1f1.
     pub fn set_setup_header(&mut self, hdr: &SetupHeader) {
         let src = unsafe {
-            core::slice::from_raw_parts(hdr as *const _ as *const u8, core::mem::size_of::<SetupHeader>())
+            core::slice::from_raw_parts(
+                hdr as *const _ as *const u8,
+                core::mem::size_of::<SetupHeader>(),
+            )
         };
         let dst = &mut self.bytes[Self::SETUP_HEADER_OFF..Self::SETUP_HEADER_OFF + src.len()];
         dst.copy_from_slice(src);
@@ -146,7 +157,10 @@ impl BootParams {
     pub fn setup_header(&self) -> SetupHeader {
         let mut hdr = SetupHeader::default();
         let dst = unsafe {
-            core::slice::from_raw_parts_mut(&mut hdr as *mut _ as *mut u8, core::mem::size_of::<SetupHeader>())
+            core::slice::from_raw_parts_mut(
+                &mut hdr as *mut _ as *mut u8,
+                core::mem::size_of::<SetupHeader>(),
+            )
         };
         let src = &self.bytes[Self::SETUP_HEADER_OFF..Self::SETUP_HEADER_OFF + dst.len()];
         dst.copy_from_slice(src);
@@ -171,13 +185,16 @@ impl BootParams {
         let entry_size = core::mem::size_of::<E820Entry>();
         for (i, e) in entries.iter().take(n).enumerate() {
             let off = Self::E820_TABLE_OFF + i * entry_size;
-            let src = unsafe { core::slice::from_raw_parts(e as *const _ as *const u8, entry_size) };
+            let src =
+                unsafe { core::slice::from_raw_parts(e as *const _ as *const u8, entry_size) };
             self.bytes[off..off + entry_size].copy_from_slice(src);
         }
     }
 
     /// Number of E820 entries currently recorded.
-    pub fn e820_count(&self) -> u8 { self.bytes[Self::E820_ENTRIES_OFF] }
+    pub fn e820_count(&self) -> u8 {
+        self.bytes[Self::E820_ENTRIES_OFF]
+    }
 }
 
 #[cfg(test)]
@@ -220,11 +237,17 @@ mod tests {
     fn loader_fields_are_patched_in_place() {
         let mut bp = BootParams::new();
         let mut h = SetupHeader::default();
-        h.header = HDRS_MAGIC; h.boot_flag = 0xAA55;
+        h.header = HDRS_MAGIC;
+        h.boot_flag = 0xAA55;
         bp.set_setup_header(&h);
         bp.set_loader_fields(0x20000, 0x1000000, 0x40000);
         let back = bp.setup_header();
-        let (cl, ri, rs, lt) = (back.cmd_line_ptr, back.ramdisk_image, back.ramdisk_size, back.type_of_loader);
+        let (cl, ri, rs, lt) = (
+            back.cmd_line_ptr,
+            back.ramdisk_image,
+            back.ramdisk_size,
+            back.type_of_loader,
+        );
         assert_eq!(cl, 0x20000);
         assert_eq!(ri, 0x1000000);
         assert_eq!(rs, 0x40000);
@@ -236,9 +259,21 @@ mod tests {
     fn e820_table_and_count_are_written() {
         let mut bp = BootParams::new();
         let entries = alloc::vec![
-            E820Entry { addr: 0, size: 0x9_fc00, kind: e820::RAM },
-            E820Entry { addr: 0x10_0000, size: 0x7000_0000, kind: e820::RAM },
-            E820Entry { addr: 0xE000_0000, size: 0x1000_0000, kind: e820::RESERVED },
+            E820Entry {
+                addr: 0,
+                size: 0x9_fc00,
+                kind: e820::RAM
+            },
+            E820Entry {
+                addr: 0x10_0000,
+                size: 0x7000_0000,
+                kind: e820::RAM
+            },
+            E820Entry {
+                addr: 0xE000_0000,
+                size: 0x1000_0000,
+                kind: e820::RESERVED
+            },
         ];
         bp.set_e820(&entries);
         assert_eq!(bp.e820_count(), 3);
@@ -251,13 +286,21 @@ mod tests {
             core::slice::from_raw_parts_mut(&mut got as *mut _ as *mut u8, entry_size)
                 .copy_from_slice(raw);
         }
-        assert_eq!(got, E820Entry { addr: 0x10_0000, size: 0x7000_0000, kind: e820::RAM });
+        assert_eq!(
+            got,
+            E820Entry {
+                addr: 0x10_0000,
+                size: 0x7000_0000,
+                kind: e820::RAM
+            }
+        );
     }
 
     #[test]
     fn e820_truncates_to_max() {
         let mut bp = BootParams::new();
-        let many = alloc::vec![E820Entry { addr: 0, size: 1, kind: e820::RAM }; E820_MAX_ENTRIES + 10];
+        let many =
+            alloc::vec![E820Entry { addr: 0, size: 1, kind: e820::RAM }; E820_MAX_ENTRIES + 10];
         bp.set_e820(&many);
         assert_eq!(bp.e820_count() as usize, E820_MAX_ENTRIES);
     }

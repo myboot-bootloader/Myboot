@@ -3,12 +3,15 @@
 //! generation directory holds a `bootspec.json` (or `boot.json`) with the
 //! `org.nixos.bootspec.v1` object and optional `org.nixos.specialisation.v1`.
 extern crate alloc;
+use crate::{
+    json::{self, Json},
+    RawEntry,
+};
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use graph::{BootMethod, EntryRole, OsKind};
 use ports::FileStore;
-use graph::{OsKind, EntryRole, BootMethod};
-use crate::{RawEntry, json::{self, Json}};
 
 pub const BOOTSPEC_DIR: &str = "\\EFI\\nixos";
 pub const V1: &str = "org.nixos.bootspec.v1";
@@ -16,7 +19,10 @@ pub const SPEC_V1: &str = "org.nixos.specialisation.v1";
 
 pub fn discover<F: FileStore + ?Sized>(fs: &F) -> Vec<RawEntry> {
     let mut out = Vec::new();
-    let names = match fs.list_dir_meta(BOOTSPEC_DIR) { Ok(n) => n, Err(_) => return out };
+    let names = match fs.list_dir_meta(BOOTSPEC_DIR) {
+        Ok(n) => n,
+        Err(_) => return out,
+    };
     // Only directories can hold a bootspec file. On a systemd-boot-managed NixOS
     // ESP, `\EFI\nixos` is full of kernel/initrd FILES; probing two names under
     // each of those was two failed opens per file, every boot.
@@ -41,12 +47,16 @@ pub fn discover<F: FileStore + ?Sized>(fs: &F) -> Vec<RawEntry> {
 /// Extract the base generation entry and any specialisations from one document.
 fn collect(doc: &Json, gen: Option<u32>, out: &mut Vec<RawEntry>) {
     if let Some(base) = doc.path(&[V1]) {
-        if let Some(e) = entry_from_bootspec(base, gen, None) { out.push(e); }
+        if let Some(e) = entry_from_bootspec(base, gen, None) {
+            out.push(e);
+        }
     }
     if let Some(Json::Obj(specs)) = doc.get(SPEC_V1) {
         for (spec_name, spec_doc) in specs {
             if let Some(inner) = spec_doc.path(&[V1]) {
-                if let Some(e) = entry_from_bootspec(inner, gen, Some(spec_name.clone())) { out.push(e); }
+                if let Some(e) = entry_from_bootspec(inner, gen, Some(spec_name.clone())) {
+                    out.push(e);
+                }
             }
         }
     }
@@ -58,24 +68,48 @@ fn entry_from_bootspec(bs: &Json, gen: Option<u32>, spec: Option<String>) -> Opt
     let label = bs.get("label").and_then(|j| j.as_str()).unwrap_or("NixOS");
 
     // kernelParams is an array of strings → a single cmdline.
-    let cmdline = bs.get("kernelParams").and_then(|j| j.as_array()).map(|arr| {
-        let mut s = String::new();
-        for (i, p) in arr.iter().enumerate() {
-            if let Some(ps) = p.as_str() { if i > 0 { s.push(' '); } s.push_str(ps); }
-        }
-        s
-    });
+    let cmdline = bs
+        .get("kernelParams")
+        .and_then(|j| j.as_array())
+        .map(|arr| {
+            let mut s = String::new();
+            for (i, p) in arr.iter().enumerate() {
+                if let Some(ps) = p.as_str() {
+                    if i > 0 {
+                        s.push(' ');
+                    }
+                    s.push_str(ps);
+                }
+            }
+            s
+        });
 
     let (role, title) = match (gen, &spec) {
-        (Some(g), Some(name)) => (EntryRole::Specialisation { parent: g, name: name.clone() },
-                                   format!("{label} (gen {g}, {name})")),
+        (Some(g), Some(name)) => (
+            EntryRole::Specialisation {
+                parent: g,
+                name: name.clone(),
+            },
+            format!("{label} (gen {g}, {name})"),
+        ),
         (Some(g), None) => (EntryRole::Generation(g), format!("{label} (gen {g})")),
-        (None, Some(name)) => (EntryRole::Specialisation { parent: 0, name: name.clone() },
-                               format!("{label} ({name})")),
+        (None, Some(name)) => (
+            EntryRole::Specialisation {
+                parent: 0,
+                name: name.clone(),
+            },
+            format!("{label} ({name})"),
+        ),
         (None, None) => (EntryRole::Default, String::from(label)),
     };
 
-    let mut e = RawEntry::new(OsKind::NixOs, "NixOS", title, role, BootMethod::NixGeneration);
+    let mut e = RawEntry::new(
+        OsKind::NixOs,
+        "NixOS",
+        title,
+        role,
+        BootMethod::NixGeneration,
+    );
     e.kernel = Some(to_efi(kernel));
     e.initrd = initrd.map(to_efi);
     e.cmdline = cmdline;
@@ -85,15 +119,23 @@ fn entry_from_bootspec(bs: &Json, gen: Option<u32>, spec: Option<String>) -> Opt
 /// Parse a generation number out of a directory name, if present
 /// (accepts forms like `128`, `nixos-128`, `generation-128`).
 fn generation_of(dir: &str) -> Option<u32> {
-    let digits: String = dir.chars().rev().take_while(|c| c.is_ascii_digit()).collect();
-    if digits.is_empty() { return None; }
+    let digits: String = dir
+        .chars()
+        .rev()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    if digits.is_empty() {
+        return None;
+    }
     let forward: String = digits.chars().rev().collect();
     forward.parse::<u32>().ok()
 }
 
 fn to_efi(p: &str) -> String {
     let mut s = String::with_capacity(p.len());
-    for c in p.chars() { s.push(if c == '/' { '\\' } else { c }); }
+    for c in p.chars() {
+        s.push(if c == '/' { '\\' } else { c });
+    }
     s
 }
 
@@ -118,7 +160,10 @@ mod tests {
             .with_file("\\EFI\\nixos\\generation-128\\bootspec.json", BS.as_bytes());
         let entries = discover(&fs);
         assert_eq!(entries.len(), 2, "base generation + one specialisation");
-        let base = entries.iter().find(|e| matches!(e.role, EntryRole::Generation(128))).unwrap();
+        let base = entries
+            .iter()
+            .find(|e| matches!(e.role, EntryRole::Generation(128)))
+            .unwrap();
         assert_eq!(base.kernel.as_deref(), Some("\\EFI\\nixos\\k-128\\bzImage"));
         assert_eq!(base.cmdline.as_deref(), Some("init=/nix/init loglevel=4"));
         assert!(entries.iter().any(|e| matches!(&e.role, EntryRole::Specialisation { parent: 128, name } if name == "gaming")));

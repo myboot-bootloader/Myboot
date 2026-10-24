@@ -3,10 +3,10 @@
 //! same target (e.g. a firmware Boot#### and an ESP probe for Windows) collapse
 //! into one entry, with the richer description winning.
 extern crate alloc;
+use crate::RawEntry;
 use alloc::string::String;
 use alloc::vec::Vec;
-use graph::{BootGraph, DiskNode, DiskId, OsNode, BootEntry, EntryId, EfiPath, OsKind};
-use crate::RawEntry;
+use graph::{BootEntry, BootGraph, DiskId, DiskNode, EfiPath, EntryId, OsKind, OsNode};
 
 /// Build the Boot Graph from raw entries. All entries currently attach to a
 /// single logical disk (the running machine's storage); multi-disk grouping is a
@@ -40,11 +40,14 @@ pub fn build_graph(raw: Vec<RawEntry>) -> BootGraph {
     let volumed_bases: alloc::vec::Vec<alloc::string::String> = entries
         .iter()
         .filter(|e| e.volume.is_some())
-        .filter_map(|e| e.id.as_str().split('@').next().map(alloc::string::String::from))
+        .filter_map(|e| {
+            e.id.as_str()
+                .split('@')
+                .next()
+                .map(alloc::string::String::from)
+        })
         .collect();
-    entries.retain(|e| {
-        e.volume.is_some() || !volumed_bases.iter().any(|b| b == e.id.as_str())
-    });
+    entries.retain(|e| e.volume.is_some() || !volumed_bases.iter().any(|b| b == e.id.as_str()));
 
     // 2. Group entries by OS family, preserving first-seen order.
     let mut systems: Vec<OsNode> = Vec::new();
@@ -61,7 +64,11 @@ pub fn build_graph(raw: Vec<RawEntry>) -> BootGraph {
     }
 
     let mut graph = BootGraph::new();
-    graph.add_disk(DiskNode { id: DiskId(0), label: String::from("system"), systems });
+    graph.add_disk(DiskNode {
+        id: DiskId(0),
+        label: String::from("system"),
+        systems,
+    });
     graph.sort_canonical();
     graph
 }
@@ -69,7 +76,9 @@ pub fn build_graph(raw: Vec<RawEntry>) -> BootGraph {
 fn to_entry(r: RawEntry) -> BootEntry {
     let mut e = BootEntry::new(r.kind, r.title, r.role, r.method);
     e.volume = r.volume;
-    if let Some(l) = r.loader { e.loader = Some(EfiPath(l)); }
+    if let Some(l) = r.loader {
+        e.loader = Some(EfiPath(l));
+    }
     e.kernel = r.kernel.map(EfiPath);
     e.initrd = r.initrd.map(EfiPath);
     e.cmdline = r.cmdline;
@@ -91,11 +100,21 @@ fn to_entry(r: RawEntry) -> BootEntry {
 /// When two sources describe the same id, keep any concrete paths and the more
 /// descriptive title (longer, non-generic) — the richer evidence wins.
 fn merge_into(existing: &mut BootEntry, other: BootEntry) {
-    if existing.loader.is_none() { existing.loader = other.loader; }
-    if existing.kernel.is_none() { existing.kernel = other.kernel; }
-    if existing.initrd.is_none() { existing.initrd = other.initrd; }
-    if existing.cmdline.is_none() { existing.cmdline = other.cmdline; }
-    if other.title.len() > existing.title.len() { existing.title = other.title; }
+    if existing.loader.is_none() {
+        existing.loader = other.loader;
+    }
+    if existing.kernel.is_none() {
+        existing.kernel = other.kernel;
+    }
+    if existing.initrd.is_none() {
+        existing.initrd = other.initrd;
+    }
+    if existing.cmdline.is_none() {
+        existing.cmdline = other.cmdline;
+    }
+    if other.title.len() > existing.title.len() {
+        existing.title = other.title;
+    }
 }
 
 /// Recover the OsKind from a stable id's slug prefix (ids start `<kind>:`).
@@ -125,9 +144,15 @@ fn os_display_name(kind: OsKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use graph::{OsKind, EntryRole, BootMethod};
+    use graph::{BootMethod, EntryRole, OsKind};
 
-    fn raw(kind: OsKind, title: &str, role: EntryRole, method: BootMethod, loader: Option<&str>) -> RawEntry {
+    fn raw(
+        kind: OsKind,
+        title: &str,
+        role: EntryRole,
+        method: BootMethod,
+        loader: Option<&str>,
+    ) -> RawEntry {
         let mut r = RawEntry::new(kind, "os", title, role, method);
         r.loader = loader.map(Into::into);
         // A real launchable entry has a loader OR a kernel; give loader-less test
@@ -142,16 +167,44 @@ mod tests {
     #[test]
     fn groups_and_orders_by_os_and_generation() {
         let raws = alloc::vec![
-            raw(OsKind::NixOs, "gen126", EntryRole::Generation(126), BootMethod::NixGeneration, None),
-            raw(OsKind::Windows, "Windows Boot Manager", EntryRole::Default, BootMethod::WindowsBootManager, Some("\\EFI\\Microsoft\\Boot\\bootmgfw.efi")),
-            raw(OsKind::NixOs, "gen128", EntryRole::Generation(128), BootMethod::NixGeneration, None),
+            raw(
+                OsKind::NixOs,
+                "gen126",
+                EntryRole::Generation(126),
+                BootMethod::NixGeneration,
+                None
+            ),
+            raw(
+                OsKind::Windows,
+                "Windows Boot Manager",
+                EntryRole::Default,
+                BootMethod::WindowsBootManager,
+                Some("\\EFI\\Microsoft\\Boot\\bootmgfw.efi")
+            ),
+            raw(
+                OsKind::NixOs,
+                "gen128",
+                EntryRole::Generation(128),
+                BootMethod::NixGeneration,
+                None
+            ),
         ];
         let g = build_graph(raws);
         assert_eq!(g.len(), 3);
         // NixOS entries ordered newest-first within their OS node
-        let nix = g.disks[0].systems.iter().find(|o| o.kind == OsKind::NixOs).unwrap();
-        let gens: Vec<u32> = nix.entries.iter().filter_map(|e| match &e.role {
-            EntryRole::Generation(x) => Some(*x), _ => None }).collect();
+        let nix = g.disks[0]
+            .systems
+            .iter()
+            .find(|o| o.kind == OsKind::NixOs)
+            .unwrap();
+        let gens: Vec<u32> = nix
+            .entries
+            .iter()
+            .filter_map(|e| match &e.role {
+                EntryRole::Generation(x) => Some(*x),
+                _ => None,
+            })
+            .collect();
         assert_eq!(gens, alloc::vec![128, 126]);
     }
 
@@ -160,8 +213,20 @@ mod tests {
         // Firmware option and ESP probe both reference the canonical loader path,
         // so they derive the SAME stable id and collapse into one entry.
         let loader = "\\EFI\\Microsoft\\Boot\\bootmgfw.efi";
-        let from_vars = raw(OsKind::Windows, "Windows Boot Manager", EntryRole::Default, BootMethod::WindowsBootManager, Some(loader));
-        let from_esp  = raw(OsKind::Windows, "Windows Boot Manager", EntryRole::Default, BootMethod::WindowsBootManager, Some(loader));
+        let from_vars = raw(
+            OsKind::Windows,
+            "Windows Boot Manager",
+            EntryRole::Default,
+            BootMethod::WindowsBootManager,
+            Some(loader),
+        );
+        let from_esp = raw(
+            OsKind::Windows,
+            "Windows Boot Manager",
+            EntryRole::Default,
+            BootMethod::WindowsBootManager,
+            Some(loader),
+        );
         let g = build_graph(alloc::vec![from_vars, from_esp]);
         assert_eq!(g.len(), 1, "same id must collapse to one entry");
         assert!(g.entries().next().unwrap().loader.is_some());
@@ -171,14 +236,29 @@ mod tests {
     fn nixos_generation_merges_partial_info_from_two_sources() {
         // Realistic merge: one source knows the kernel, another the initrd, same
         // generation (loader is None for NixOS, so id = nixos:gen128 in both).
-        let mut a = raw(OsKind::NixOs, "gen128", EntryRole::Generation(128), BootMethod::NixGeneration, None);
+        let mut a = raw(
+            OsKind::NixOs,
+            "gen128",
+            EntryRole::Generation(128),
+            BootMethod::NixGeneration,
+            None,
+        );
         a.kernel = Some("\\EFI\\nixos\\k\\bzImage".into());
-        let mut b = raw(OsKind::NixOs, "NixOS 24.05 (gen 128)", EntryRole::Generation(128), BootMethod::NixGeneration, None);
+        let mut b = raw(
+            OsKind::NixOs,
+            "NixOS 24.05 (gen 128)",
+            EntryRole::Generation(128),
+            BootMethod::NixGeneration,
+            None,
+        );
         b.initrd = Some("\\EFI\\nixos\\k\\initrd".into());
         let g = build_graph(alloc::vec![a, b]);
         assert_eq!(g.len(), 1, "same generation collapses to one entry");
         let e = g.entries().next().unwrap();
-        assert!(e.kernel.is_some() && e.initrd.is_some(), "partial info merged");
+        assert!(
+            e.kernel.is_some() && e.initrd.is_some(),
+            "partial info merged"
+        );
         assert!(e.title.contains("24.05"), "richer title wins");
     }
 
@@ -187,9 +267,21 @@ mod tests {
         // A firmware Boot#### that points at a whole device yields an entry with
         // neither a loader nor a kernel — it cannot be launched and must not sit
         // in the graph as bootable.
-        let mut orphan = RawEntry::new(OsKind::GenericEfi, "os", "UEFI HARDDISK", EntryRole::Default, BootMethod::EfiChainload);
+        let mut orphan = RawEntry::new(
+            OsKind::GenericEfi,
+            "os",
+            "UEFI HARDDISK",
+            EntryRole::Default,
+            BootMethod::EfiChainload,
+        );
         orphan.loader = None; // and no kernel
-        let win = raw(OsKind::Windows, "Windows Boot Manager", EntryRole::Default, BootMethod::WindowsBootManager, Some("\\EFI\\Microsoft\\Boot\\bootmgfw.efi"));
+        let win = raw(
+            OsKind::Windows,
+            "Windows Boot Manager",
+            EntryRole::Default,
+            BootMethod::WindowsBootManager,
+            Some("\\EFI\\Microsoft\\Boot\\bootmgfw.efi"),
+        );
         let g = build_graph(alloc::vec![orphan, win]);
         assert_eq!(g.len(), 1, "the loader-less, kernel-less entry is dropped");
         assert_eq!(g.entries().next().unwrap().title, "Windows Boot Manager");
@@ -200,14 +292,30 @@ mod tests {
         // The core multi-disk case: \EFI\BOOT\BOOTX64.EFI on two different volumes
         // must NOT collapse — otherwise MyBoot can't tell its own medium from a
         // Ventoy USB / an installer ISO.
-        let mut a = RawEntry::new(OsKind::GenericEfi, "os", "EFI Fallback A", EntryRole::Default, BootMethod::EfiChainload);
+        let mut a = RawEntry::new(
+            OsKind::GenericEfi,
+            "os",
+            "EFI Fallback A",
+            EntryRole::Default,
+            BootMethod::EfiChainload,
+        );
         a.loader = Some("\\EFI\\BOOT\\BOOTX64.EFI".into());
         a.volume = Some("volA".into());
-        let mut b = RawEntry::new(OsKind::GenericEfi, "os", "EFI Fallback B", EntryRole::Default, BootMethod::EfiChainload);
+        let mut b = RawEntry::new(
+            OsKind::GenericEfi,
+            "os",
+            "EFI Fallback B",
+            EntryRole::Default,
+            BootMethod::EfiChainload,
+        );
         b.loader = Some("\\EFI\\BOOT\\BOOTX64.EFI".into());
         b.volume = Some("volB".into());
         let g = build_graph(alloc::vec![a, b]);
-        assert_eq!(g.len(), 2, "same loader path on two volumes must be two entries");
+        assert_eq!(
+            g.len(),
+            2,
+            "same loader path on two volumes must be two entries"
+        );
     }
 
     #[test]
@@ -215,28 +323,61 @@ mod tests {
         // An NVRAM (volume=None) entry duplicating a filesystem entry found on a
         // volume is dropped; the volume-bearing one (chainloadable from its disk)
         // wins.
-        let mut nvram = RawEntry::new(OsKind::Windows, "Windows", "Windows Boot Manager", EntryRole::Default, BootMethod::WindowsBootManager);
+        let mut nvram = RawEntry::new(
+            OsKind::Windows,
+            "Windows",
+            "Windows Boot Manager",
+            EntryRole::Default,
+            BootMethod::WindowsBootManager,
+        );
         nvram.loader = Some("\\EFI\\Microsoft\\Boot\\bootmgfw.efi".into()); // volume None
-        let mut esp = RawEntry::new(OsKind::Windows, "Windows", "Windows Boot Manager", EntryRole::Default, BootMethod::WindowsBootManager);
+        let mut esp = RawEntry::new(
+            OsKind::Windows,
+            "Windows",
+            "Windows Boot Manager",
+            EntryRole::Default,
+            BootMethod::WindowsBootManager,
+        );
         esp.loader = Some("\\EFI\\Microsoft\\Boot\\bootmgfw.efi".into());
         esp.volume = Some("volA".into());
         let g = build_graph(alloc::vec![nvram, esp]);
         assert_eq!(g.len(), 1, "the volume-less NVRAM twin is dropped");
-        assert!(g.entries().next().unwrap().volume.is_some(), "the surviving entry is volume-bearing");
+        assert!(
+            g.entries().next().unwrap().volume.is_some(),
+            "the surviving entry is volume-bearing"
+        );
     }
 
     #[test]
     fn fallback_titles_are_tagged_by_volume_for_the_n_os_menu() {
-        let mut a = RawEntry::new(OsKind::GenericEfi, "os", "EFI Fallback Loader", EntryRole::Default, BootMethod::EfiChainload);
+        let mut a = RawEntry::new(
+            OsKind::GenericEfi,
+            "os",
+            "EFI Fallback Loader",
+            EntryRole::Default,
+            BootMethod::EfiChainload,
+        );
         a.loader = Some("\\EFI\\BOOT\\BOOTX64.EFI".into());
         a.volume = Some("vol000000aaaaaa".into());
-        let mut b = RawEntry::new(OsKind::GenericEfi, "os", "EFI Fallback Loader", EntryRole::Default, BootMethod::EfiChainload);
+        let mut b = RawEntry::new(
+            OsKind::GenericEfi,
+            "os",
+            "EFI Fallback Loader",
+            EntryRole::Default,
+            BootMethod::EfiChainload,
+        );
         b.loader = Some("\\EFI\\BOOT\\BOOTX64.EFI".into());
         b.volume = Some("vol000000bbbbbb".into());
         let g = build_graph(alloc::vec![a, b]);
         let titles: alloc::vec::Vec<_> = g.entries().map(|e| e.title.clone()).collect();
         assert_eq!(g.len(), 2);
-        assert!(titles.iter().any(|t| t.ends_with("[aaaaaa]")), "titles: {titles:?}");
-        assert!(titles.iter().any(|t| t.ends_with("[bbbbbb]")), "titles: {titles:?}");
+        assert!(
+            titles.iter().any(|t| t.ends_with("[aaaaaa]")),
+            "titles: {titles:?}"
+        );
+        assert!(
+            titles.iter().any(|t| t.ends_with("[bbbbbb]")),
+            "titles: {titles:?}"
+        );
     }
 }

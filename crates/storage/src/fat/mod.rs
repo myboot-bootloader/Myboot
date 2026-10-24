@@ -7,7 +7,11 @@ extern crate alloc;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct FatError;
-impl From<OutOfBounds> for FatError { fn from(_: OutOfBounds) -> Self { FatError } }
+impl From<OutOfBounds> for FatError {
+    fn from(_: OutOfBounds) -> Self {
+        FatError
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FatBpb {
@@ -31,8 +35,18 @@ impl FatBpb {
         let num_fats = bytes::u8_at(buf, 16)?;
         let oem = bytes::ascii_trimmed(buf, 3, 8)?;
         // Sanity: a valid sector size is a power of two in [512, 4096].
-        if !matches!(bytes_per_sector, 512 | 1024 | 2048 | 4096) { return Err(FatError); }
-        if sectors_per_cluster == 0 { return Err(FatError); }
-        Ok(FatBpb { bytes_per_sector, sectors_per_cluster, reserved_sectors, num_fats, oem })
+        if !matches!(bytes_per_sector, 512 | 1024 | 2048 | 4096) {
+            return Err(FatError);
+        }
+        if sectors_per_cluster == 0 {
+            return Err(FatError);
+        }
+        Ok(FatBpb {
+            bytes_per_sector,
+            sectors_per_cluster,
+            reserved_sectors,
+            num_fats,
+            oem,
+        })
     }
 }

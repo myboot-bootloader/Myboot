@@ -18,15 +18,33 @@ pub enum Json {
 }
 
 impl Json {
-    pub fn as_str(&self) -> Option<&str> { if let Json::Str(s) = self { Some(s) } else { None } }
-    pub fn as_array(&self) -> Option<&[Json]> { if let Json::Arr(a) = self { Some(a) } else { None } }
+    pub fn as_str(&self) -> Option<&str> {
+        if let Json::Str(s) = self {
+            Some(s)
+        } else {
+            None
+        }
+    }
+    pub fn as_array(&self) -> Option<&[Json]> {
+        if let Json::Arr(a) = self {
+            Some(a)
+        } else {
+            None
+        }
+    }
     pub fn get(&self, key: &str) -> Option<&Json> {
-        if let Json::Obj(m) = self { m.get(key) } else { None }
+        if let Json::Obj(m) = self {
+            m.get(key)
+        } else {
+            None
+        }
     }
     /// Navigate nested objects by a path of keys.
     pub fn path(&self, keys: &[&str]) -> Option<&Json> {
         let mut cur = self;
-        for k in keys { cur = cur.get(k)?; }
+        for k in keys {
+            cur = cur.get(k)?;
+        }
         Some(cur)
     }
 }
@@ -41,18 +59,35 @@ pub fn parse(input: &str) -> Result<Json, JsonError> {
     p.skip_ws();
     let v = p.value()?;
     p.skip_ws();
-    if p.i != p.b.len() { return Err(JsonError); } // trailing garbage
+    if p.i != p.b.len() {
+        return Err(JsonError);
+    } // trailing garbage
     Ok(v)
 }
 
-struct Parser<'a> { b: &'a [u8], i: usize }
+struct Parser<'a> {
+    b: &'a [u8],
+    i: usize,
+}
 
 impl<'a> Parser<'a> {
-    fn peek(&self) -> Option<u8> { self.b.get(self.i).copied() }
-    fn bump(&mut self) -> Option<u8> { let c = self.peek(); if c.is_some() { self.i += 1; } c }
+    fn peek(&self) -> Option<u8> {
+        self.b.get(self.i).copied()
+    }
+    fn bump(&mut self) -> Option<u8> {
+        let c = self.peek();
+        if c.is_some() {
+            self.i += 1;
+        }
+        c
+    }
     fn skip_ws(&mut self) {
         while let Some(c) = self.peek() {
-            if c == b' ' || c == b'\t' || c == b'\n' || c == b'\r' { self.i += 1; } else { break; }
+            if c == b' ' || c == b'\t' || c == b'\n' || c == b'\r' {
+                self.i += 1;
+            } else {
+                break;
+            }
         }
     }
 
@@ -73,7 +108,10 @@ impl<'a> Parser<'a> {
         self.expect(b'{')?;
         let mut map = BTreeMap::new();
         self.skip_ws();
-        if self.peek() == Some(b'}') { self.i += 1; return Ok(Json::Obj(map)); }
+        if self.peek() == Some(b'}') {
+            self.i += 1;
+            return Ok(Json::Obj(map));
+        }
         loop {
             self.skip_ws();
             let key = self.string()?;
@@ -95,7 +133,10 @@ impl<'a> Parser<'a> {
         self.expect(b'[')?;
         let mut out = Vec::new();
         self.skip_ws();
-        if self.peek() == Some(b']') { self.i += 1; return Ok(Json::Arr(out)); }
+        if self.peek() == Some(b']') {
+            self.i += 1;
+            return Ok(Json::Arr(out));
+        }
         loop {
             let v = self.value()?;
             out.push(v);
@@ -145,28 +186,47 @@ impl<'a> Parser<'a> {
 
     fn number(&mut self) -> Result<Json, JsonError> {
         let start = self.i;
-        if self.peek() == Some(b'-') { self.i += 1; }
+        if self.peek() == Some(b'-') {
+            self.i += 1;
+        }
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() || c == b'.' || c == b'e' || c == b'E' || c == b'+' || c == b'-' {
                 self.i += 1;
-            } else { break; }
+            } else {
+                break;
+            }
         }
         let slice = core::str::from_utf8(&self.b[start..self.i]).map_err(|_| JsonError)?;
         slice.parse::<f64>().map(Json::Num).map_err(|_| JsonError)
     }
 
     fn boolean(&mut self) -> Result<Json, JsonError> {
-        if self.b[self.i..].starts_with(b"true") { self.i += 4; Ok(Json::Bool(true)) }
-        else if self.b[self.i..].starts_with(b"false") { self.i += 5; Ok(Json::Bool(false)) }
-        else { Err(JsonError) }
+        if self.b[self.i..].starts_with(b"true") {
+            self.i += 4;
+            Ok(Json::Bool(true))
+        } else if self.b[self.i..].starts_with(b"false") {
+            self.i += 5;
+            Ok(Json::Bool(false))
+        } else {
+            Err(JsonError)
+        }
     }
 
     fn null(&mut self) -> Result<Json, JsonError> {
-        if self.b[self.i..].starts_with(b"null") { self.i += 4; Ok(Json::Null) } else { Err(JsonError) }
+        if self.b[self.i..].starts_with(b"null") {
+            self.i += 4;
+            Ok(Json::Null)
+        } else {
+            Err(JsonError)
+        }
     }
 
     fn expect(&mut self, c: u8) -> Result<(), JsonError> {
-        if self.bump() == Some(c) { Ok(()) } else { Err(JsonError) }
+        if self.bump() == Some(c) {
+            Ok(())
+        } else {
+            Err(JsonError)
+        }
     }
 }
 
@@ -198,7 +258,10 @@ mod tests {
           }
         }"#).unwrap();
         let bs = j.path(&["org.nixos.bootspec.v1"]).unwrap();
-        assert_eq!(bs.get("kernel").unwrap().as_str().unwrap(), "/nix/store/aaa/bzImage");
+        assert_eq!(
+            bs.get("kernel").unwrap().as_str().unwrap(),
+            "/nix/store/aaa/bzImage"
+        );
         let params = bs.get("kernelParams").unwrap().as_array().unwrap();
         assert_eq!(params.len(), 2);
         assert_eq!(params[0].as_str().unwrap(), "init=/nix/store/xxx/init");
@@ -207,7 +270,15 @@ mod tests {
 
     #[test]
     fn total_on_garbage() {
-        for s in ["", "{", "[1,2", "{\"a\":}", "nul", "\"unterminated", "trailing 1"] {
+        for s in [
+            "",
+            "{",
+            "[1,2",
+            "{\"a\":}",
+            "nul",
+            "\"unterminated",
+            "trailing 1",
+        ] {
             let _ = parse(s); // must never panic
         }
         assert!(parse("{}").is_ok());

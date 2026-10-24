@@ -14,12 +14,12 @@
 #![forbid(unsafe_code)]
 extern crate alloc;
 
-pub mod toml;
-pub mod schema;
 pub mod reconcile;
+pub mod schema;
+pub mod toml;
 
 #[cfg(test)]
 extern crate std;
 
+pub use reconcile::{PlanStep, ReconcilePlan, Snapshot};
 pub use schema::{Config, ConfigError, EntrySpec, PolicyKind, RollbackKind};
-pub use reconcile::{ReconcilePlan, PlanStep, Snapshot};

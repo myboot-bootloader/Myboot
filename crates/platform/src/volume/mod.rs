@@ -14,15 +14,17 @@
 extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
-use uefi::{boot, Status, Handle, Identify};
-use uefi::proto::media::fs::SimpleFileSystem;
-use uefi::proto::media::file::Directory;
-use uefi::proto::device_path::DevicePath;
-use uefi::proto::device_path::build::{DevicePathBuilder, media::FilePath};
-use uefi::proto::loaded_image::LoadedImage;
 use ports::{DirEntryMeta, FileStore, IoError, IoResult};
+use uefi::proto::device_path::build::{media::FilePath, DevicePathBuilder};
+use uefi::proto::device_path::DevicePath;
+use uefi::proto::loaded_image::LoadedImage;
+use uefi::proto::media::file::Directory;
+use uefi::proto::media::fs::SimpleFileSystem;
+use uefi::{boot, Handle, Identify, Status};
 
-use crate::fs::{read_in, read_head_in, write_in, exists_in, list_dir_in, list_dir_meta_in, to_cpath, map_err};
+use crate::fs::{
+    exists_in, list_dir_in, list_dir_meta_in, map_err, read_head_in, read_in, to_cpath, write_in,
+};
 
 /// A `FileStore` bound to one filesystem handle. Stateless like `UefiFileStore`:
 /// it reopens the volume root per operation. Its stable id is computed once, when
@@ -68,18 +70,23 @@ impl Volume {
     /// buffer load for self-contained images if the device-path load is refused.
     pub fn chainload(&self, file_path: &str, options: &str) -> Status {
         match self.load_via_device_path(file_path) {
-            Ok(image) => { set_options_and_start(image, options); Status::LOAD_ERROR }
+            Ok(image) => {
+                set_options_and_start(image, options);
+                Status::LOAD_ERROR
+            }
             Err(_) => self.chainload_from_buffer(file_path, options),
         }
     }
 
     /// This volume's stable id (see `compute_id`), computed once at enumeration.
-    pub fn id(&self) -> &str { &self.id }
+    pub fn id(&self) -> &str {
+        &self.id
+    }
 
     /// Build `volume_device_path + FilePath(file_path)` and LoadImage from it.
     fn load_via_device_path(&self, file_path: &str) -> Result<Handle, Status> {
-        let dp = boot::open_protocol_exclusive::<DevicePath>(self.handle)
-            .map_err(|e| e.status())?;
+        let dp =
+            boot::open_protocol_exclusive::<DevicePath>(self.handle).map_err(|e| e.status())?;
         let cpath = to_cpath(file_path).map_err(|_| Status::INVALID_PARAMETER)?;
 
         let mut buf: Vec<u8> = Vec::new();
@@ -88,8 +95,10 @@ impl Volume {
             builder = builder.push(&node).map_err(|_| Status::OUT_OF_RESOURCES)?;
         }
         let full = builder
-            .push(&FilePath { path_name: &cpath }).map_err(|_| Status::OUT_OF_RESOURCES)?
-            .finalize().map_err(|_| Status::OUT_OF_RESOURCES)?;
+            .push(&FilePath { path_name: &cpath })
+            .map_err(|_| Status::OUT_OF_RESOURCES)?
+            .finalize()
+            .map_err(|_| Status::OUT_OF_RESOURCES)?;
 
         boot::load_image(
             boot::image_handle(),
@@ -97,31 +106,52 @@ impl Volume {
                 device_path: full,
                 boot_policy: uefi::proto::BootPolicy::ExactMatch,
             },
-        ).map_err(|e| e.status())
+        )
+        .map_err(|e| e.status())
     }
 
     /// Fallback: read the image bytes off this volume and load FROM A BUFFER.
     /// Works for self-contained EFI applications (UEFI shell, EFI-stub kernels).
     fn chainload_from_buffer(&self, file_path: &str, options: &str) -> Status {
-        let bytes = match self.read(file_path) { Ok(b) => b, Err(_) => return Status::NOT_FOUND };
+        let bytes = match self.read(file_path) {
+            Ok(b) => b,
+            Err(_) => return Status::NOT_FOUND,
+        };
         match boot::load_image(
             boot::image_handle(),
-            boot::LoadImageSource::FromBuffer { buffer: &bytes, file_path: None },
+            boot::LoadImageSource::FromBuffer {
+                buffer: &bytes,
+                file_path: None,
+            },
         ) {
-            Ok(image) => { set_options_and_start(image, options); Status::LOAD_ERROR }
+            Ok(image) => {
+                set_options_and_start(image, options);
+                Status::LOAD_ERROR
+            }
             Err(e) => e.status(),
         }
     }
 }
 
 impl FileStore for Volume {
-    fn read(&self, path: &str) -> IoResult<Vec<u8>> { read_in(&mut self.open_root()?, path) }
-    fn write(&mut self, path: &str, data: &[u8]) -> IoResult<()> { write_in(&mut self.open_root()?, path, data, false) }
-    fn append(&mut self, path: &str, data: &[u8]) -> IoResult<()> { write_in(&mut self.open_root()?, path, data, true) }
-    fn exists(&self, path: &str) -> bool {
-        match self.open_root() { Ok(mut r) => exists_in(&mut r, path), Err(_) => false }
+    fn read(&self, path: &str) -> IoResult<Vec<u8>> {
+        read_in(&mut self.open_root()?, path)
     }
-    fn list_dir(&self, path: &str) -> IoResult<Vec<String>> { list_dir_in(&mut self.open_root()?, path) }
+    fn write(&mut self, path: &str, data: &[u8]) -> IoResult<()> {
+        write_in(&mut self.open_root()?, path, data, false)
+    }
+    fn append(&mut self, path: &str, data: &[u8]) -> IoResult<()> {
+        write_in(&mut self.open_root()?, path, data, true)
+    }
+    fn exists(&self, path: &str) -> bool {
+        match self.open_root() {
+            Ok(mut r) => exists_in(&mut r, path),
+            Err(_) => false,
+        }
+    }
+    fn list_dir(&self, path: &str) -> IoResult<Vec<String>> {
+        list_dir_in(&mut self.open_root()?, path)
+    }
     fn read_head(&self, path: &str, max_len: usize) -> IoResult<Vec<u8>> {
         read_head_in(&mut self.open_root()?, path, max_len)
     }
@@ -129,13 +159,17 @@ impl FileStore for Volume {
         list_dir_meta_in(&mut self.open_root()?, path)
     }
     fn volume_label(&self) -> Option<String> {
-        use uefi::proto::media::file::{FileSystemVolumeLabel, File};
         use alloc::string::ToString;
+        use uefi::proto::media::file::{File, FileSystemVolumeLabel};
         let mut root = self.open_root().ok()?;
         let info = root.get_boxed_info::<FileSystemVolumeLabel>().ok()?;
         let s = info.volume_label().to_string();
         let s = s.trim();
-        if s.is_empty() { None } else { Some(String::from(s)) }
+        if s.is_empty() {
+            None
+        } else {
+            Some(String::from(s))
+        }
     }
 }
 
@@ -150,7 +184,9 @@ fn set_options_and_start(image: Handle, options: &str) {
     if !opts16.is_empty() {
         if let Ok(mut li) = boot::open_protocol_exclusive::<LoadedImage>(image) {
             // SAFETY: opts16 outlives start_image below; size is in bytes.
-            unsafe { li.set_load_options(opts16.as_ptr() as *const u8, (opts16.len() * 2) as u32); }
+            unsafe {
+                li.set_load_options(opts16.as_ptr() as *const u8, (opts16.len() * 2) as u32);
+            }
         }
     }
     let _ = boot::start_image(image);
@@ -175,7 +211,13 @@ pub fn connect_all_controllers() {
 /// All filesystems the firmware knows about, each as a `Volume`.
 pub fn volumes() -> Vec<Volume> {
     match boot::locate_handle_buffer(boot::SearchType::ByProtocol(&SimpleFileSystem::GUID)) {
-        Ok(handles) => handles.iter().map(|&handle| Volume { handle, id: compute_id(handle) }).collect(),
+        Ok(handles) => handles
+            .iter()
+            .map(|&handle| Volume {
+                handle,
+                id: compute_id(handle),
+            })
+            .collect(),
         Err(_) => Vec::new(),
     }
 }
@@ -214,19 +256,29 @@ impl MultiVolume {
     /// calls `connect_all_controllers()` itself before this so the two steps can
     /// be timed separately; `discover()` is the combined form.
     pub fn enumerate() -> Self {
-        MultiVolume { vols: volumes(), boot: crate::fs::UefiFileStore::new() }
+        MultiVolume {
+            vols: volumes(),
+            boot: crate::fs::UefiFileStore::new(),
+        }
     }
 
     /// Number of volumes discovered (for diagnostics).
-    pub fn len(&self) -> usize { self.vols.len() }
-    pub fn is_empty(&self) -> bool { self.vols.is_empty() }
+    pub fn len(&self) -> usize {
+        self.vols.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.vols.is_empty()
+    }
 
     /// Per-volume scan targets for volume-scoped discovery: each volume paired
     /// with its stable id, as a `FileStore`. `discovery::discover_multi` tags every
     /// entry it finds on a volume with that id, so two disks that share a loader
     /// path stay distinct.
     pub fn scan_targets(&self) -> Vec<(String, &dyn FileStore)> {
-        self.vols.iter().map(|v| (String::from(v.id()), v as &dyn FileStore)).collect()
+        self.vols
+            .iter()
+            .map(|v| (String::from(v.id()), v as &dyn FileStore))
+            .collect()
     }
 
     /// Chainload `file_path` from the SPECIFIC volume identified by `volume_id`
@@ -260,27 +312,45 @@ impl MultiVolume {
 impl FileStore for MultiVolume {
     fn read(&self, path: &str) -> IoResult<Vec<u8>> {
         for v in &self.vols {
-            if let Ok(bytes) = v.read(path) { return Ok(bytes); }
+            if let Ok(bytes) = v.read(path) {
+                return Ok(bytes);
+            }
         }
         Err(IoError::NotFound)
     }
-    fn write(&mut self, path: &str, data: &[u8]) -> IoResult<()> { self.boot.write(path, data) }
-    fn append(&mut self, path: &str, data: &[u8]) -> IoResult<()> { self.boot.append(path, data) }
-    fn exists(&self, path: &str) -> bool { self.vols.iter().any(|v| v.exists(path)) }
+    fn write(&mut self, path: &str, data: &[u8]) -> IoResult<()> {
+        self.boot.write(path, data)
+    }
+    fn append(&mut self, path: &str, data: &[u8]) -> IoResult<()> {
+        self.boot.append(path, data)
+    }
+    fn exists(&self, path: &str) -> bool {
+        self.vols.iter().any(|v| v.exists(path))
+    }
     fn list_dir(&self, path: &str) -> IoResult<Vec<String>> {
         let mut names: Vec<String> = Vec::new();
         let mut found = false;
         for v in &self.vols {
             if let Ok(list) = v.list_dir(path) {
                 found = true;
-                for n in list { if !names.iter().any(|x| x == &n) { names.push(n); } }
+                for n in list {
+                    if !names.iter().any(|x| x == &n) {
+                        names.push(n);
+                    }
+                }
             }
         }
-        if found { Ok(names) } else { Err(IoError::NotFound) }
+        if found {
+            Ok(names)
+        } else {
+            Err(IoError::NotFound)
+        }
     }
     fn read_head(&self, path: &str, max_len: usize) -> IoResult<Vec<u8>> {
         for v in &self.vols {
-            if let Ok(bytes) = v.read_head(path, max_len) { return Ok(bytes); }
+            if let Ok(bytes) = v.read_head(path, max_len) {
+                return Ok(bytes);
+            }
         }
         Err(IoError::NotFound)
     }
@@ -292,9 +362,17 @@ impl FileStore for MultiVolume {
         for v in &self.vols {
             if let Ok(list) = v.list_dir_meta(path) {
                 found = true;
-                for m in list { if !items.iter().any(|x| x.name == m.name) { items.push(m); } }
+                for m in list {
+                    if !items.iter().any(|x| x.name == m.name) {
+                        items.push(m);
+                    }
+                }
             }
         }
-        if found { Ok(items) } else { Err(IoError::NotFound) }
+        if found {
+            Ok(items)
+        } else {
+            Err(IoError::NotFound)
+        }
     }
 }

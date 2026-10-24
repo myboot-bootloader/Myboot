@@ -8,7 +8,9 @@ use alloc::string::String;
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Reason(pub String);
 impl Reason {
-    pub fn new(s: impl Into<String>) -> Self { Reason(s.into()) }
+    pub fn new(s: impl Into<String>) -> Self {
+        Reason(s.into())
+    }
 }
 
 /// First-class health annotation consumed by policy, the UIs and recovery.
@@ -37,4 +39,8 @@ impl Health {
 
 /// The recorded outcome of the last attempt on an entry (report §3.7).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum BootResult { Confirmed, Failed, Unknown }
+pub enum BootResult {
+    Confirmed,
+    Failed,
+    Unknown,
+}

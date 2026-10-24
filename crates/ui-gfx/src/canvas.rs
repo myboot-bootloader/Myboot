@@ -5,9 +5,15 @@ extern crate alloc;
 
 /// An 8-bit-per-channel RGB colour.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Rgb { pub r: u8, pub g: u8, pub b: u8 }
+pub struct Rgb {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
 impl Rgb {
-    pub const fn new(r: u8, g: u8, b: u8) -> Self { Rgb { r, g, b } }
+    pub const fn new(r: u8, g: u8, b: u8) -> Self {
+        Rgb { r, g, b }
+    }
 }
 
 /// A minimal 2D surface. Implementations must bounds-check: out-of-range writes
@@ -31,9 +37,8 @@ pub trait Canvas {
         let (w, h) = self.dimensions();
         let hh = h.max(1) as i32;
         for y in 0..h {
-            let mix = |a: u8, b: u8| -> u8 {
-                (a as i32 + (b as i32 - a as i32) * y as i32 / hh) as u8
-            };
+            let mix =
+                |a: u8, b: u8| -> u8 { (a as i32 + (b as i32 - a as i32) * y as i32 / hh) as u8 };
             let c = Rgb::new(mix(top.r, bot.r), mix(top.g, bot.g), mix(top.b, bot.b));
             self.fill_rect(0, y, w, 1, c);
         }

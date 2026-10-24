@@ -6,7 +6,14 @@ use alloc::string::String;
 
 /// Operating-system family.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum OsKind { Windows, Linux, NixOs, Bsd, GenericEfi, Recovery }
+pub enum OsKind {
+    Windows,
+    Linux,
+    NixOs,
+    Bsd,
+    GenericEfi,
+    Recovery,
+}
 impl OsKind {
     pub const fn slug(self) -> &'static str {
         match self {
@@ -34,12 +41,25 @@ impl EntryRole {
     pub(crate) fn write_slug(&self, s: &mut String) {
         use core::fmt::Write;
         match self {
-            EntryRole::Default => { s.push_str("default"); }
-            EntryRole::Generation(g) => { let _ = write!(s, "gen{g}"); }
-            EntryRole::Specialisation { parent, name } => { let _ = write!(s, "gen{parent}.{name}"); }
-            EntryRole::Kernel(k) => { s.push_str("kernel."); s.push_str(k); }
-            EntryRole::Recovery => { s.push_str("recovery"); }
-            EntryRole::Fallback => { s.push_str("fallback"); }
+            EntryRole::Default => {
+                s.push_str("default");
+            }
+            EntryRole::Generation(g) => {
+                let _ = write!(s, "gen{g}");
+            }
+            EntryRole::Specialisation { parent, name } => {
+                let _ = write!(s, "gen{parent}.{name}");
+            }
+            EntryRole::Kernel(k) => {
+                s.push_str("kernel.");
+                s.push_str(k);
+            }
+            EntryRole::Recovery => {
+                s.push_str("recovery");
+            }
+            EntryRole::Fallback => {
+                s.push_str("fallback");
+            }
         }
     }
     /// Sort key: lower sorts first (current generation before older, etc.).

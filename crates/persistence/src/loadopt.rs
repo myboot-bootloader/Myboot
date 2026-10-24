@@ -21,7 +21,11 @@ pub struct LoadOption {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum LoadOptError { Short, BadDescription, LengthOverflow }
+pub enum LoadOptError {
+    Short,
+    BadDescription,
+    LengthOverflow,
+}
 
 impl LoadOption {
     pub fn new(description: impl Into<String>, file_path_list: Vec<u8>) -> Self {
@@ -37,10 +41,15 @@ impl LoadOption {
     /// is a file-path list longer than u16::MAX (a firmware limit), reported not
     /// panicked.
     pub fn encode(&self) -> Result<Vec<u8>, LoadOptError> {
-        let fpl_len: u16 = u16::try_from(self.file_path_list.len())
-            .map_err(|_| LoadOptError::LengthOverflow)?;
-        let mut out = Vec::with_capacity(4 + 2 + self.description.len() * 2 + 2
-            + self.file_path_list.len() + self.optional_data.len());
+        let fpl_len: u16 =
+            u16::try_from(self.file_path_list.len()).map_err(|_| LoadOptError::LengthOverflow)?;
+        let mut out = Vec::with_capacity(
+            4 + 2
+                + self.description.len() * 2
+                + 2
+                + self.file_path_list.len()
+                + self.optional_data.len(),
+        );
         out.extend_from_slice(&self.attributes.to_le_bytes());
         out.extend_from_slice(&fpl_len.to_le_bytes());
         // Description as UCS-2/UTF-16LE, NUL-terminated.
@@ -67,7 +76,9 @@ impl LoadOption {
             let u_b = buf.get(i..i + 2).ok_or(LoadOptError::BadDescription)?;
             let u = u16::from_le_bytes([u_b[0], u_b[1]]);
             i += 2;
-            if u == 0 { break; }
+            if u == 0 {
+                break;
+            }
             units.push(u);
         }
         let description = String::from_utf16(&units).map_err(|_| LoadOptError::BadDescription)?;
@@ -76,22 +87,33 @@ impl LoadOption {
         let file_path_list = buf.get(i..fpl_end).ok_or(LoadOptError::Short)?.to_vec();
         let optional_data = buf.get(fpl_end..).unwrap_or(&[]).to_vec();
 
-        Ok(LoadOption { attributes, description, file_path_list, optional_data })
+        Ok(LoadOption {
+            attributes,
+            description,
+            file_path_list,
+            optional_data,
+        })
     }
 
-    pub fn is_active(&self) -> bool { self.attributes & LOAD_OPTION_ACTIVE != 0 }
+    pub fn is_active(&self) -> bool {
+        self.attributes & LOAD_OPTION_ACTIVE != 0
+    }
 }
 
 /// Encode a `BootOrder` variable (array of u16 LE boot-option numbers).
 pub fn encode_boot_order(order: &[u16]) -> Vec<u8> {
     let mut out = Vec::with_capacity(order.len() * 2);
-    for n in order { out.extend_from_slice(&n.to_le_bytes()); }
+    for n in order {
+        out.extend_from_slice(&n.to_le_bytes());
+    }
     out
 }
 
 /// Decode a `BootOrder` variable. Total; a trailing odd byte is ignored.
 pub fn decode_boot_order(buf: &[u8]) -> Vec<u16> {
-    buf.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect()
+    buf.chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect()
 }
 
 #[cfg(test)]
@@ -122,7 +144,8 @@ mod tests {
         let order = [0x0000u16, 0x0001, 0x0007];
         let enc = encode_boot_order(&order);
         assert_eq!(decode_boot_order(&enc), order.to_vec());
-        let mut odd = enc.clone(); odd.push(0xAB); // stray byte
+        let mut odd = enc.clone();
+        odd.push(0xAB); // stray byte
         assert_eq!(decode_boot_order(&odd), order.to_vec());
     }
 }
