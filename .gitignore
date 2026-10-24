@@ -13,3 +13,5 @@ __pycache__/
 /website
 # Editor cruft.
 /.idea
+# Local updates scratch folder.
+/pupdates/
