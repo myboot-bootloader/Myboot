@@ -5,6 +5,7 @@ use crate::gpt::{GptHeader, GptEntry, parse_partitions};
 use crate::mbr;
 use crate::fat::FatBpb;
 use crate::pe::PeHeader;
+use crate::pe::section;
 
 #[kani::proof]
 fn gpt_header_parse_never_panics() {
@@ -47,4 +48,11 @@ fn fat_bpb_is_total() {
 fn pe_header_is_total() {
     let buf: [u8; 128] = kani::any();
     let _ = PeHeader::parse(&buf);
+}
+
+#[kani::proof]
+#[kani::unwind(4)]
+fn pe_section_find_is_total() {
+    let buf: [u8; 256] = kani::any();
+    let _ = section::find(&buf, b".sbat");
 }

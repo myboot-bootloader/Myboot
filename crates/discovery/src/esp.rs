@@ -74,14 +74,27 @@ fn media_name<F: FileStore + ?Sized>(fs: &F) -> Option<alloc::string::String> {
             }
         }
     }
-    // 4. Live ISOs have NO config on their EFI partition (only the loaders), so —
-    //    like rEFInd's icon detection — scan the loader BINARY itself for an
-    //    embedded distro string (the ISO's grub carries its distro/boot-dir names).
-    for path in ["\\EFI\\BOOT\\BOOTX64.EFI", "\\EFI\\BOOT\\grubx64.efi", "\\EFI\\BOOT\\shimx64.efi"] {
-        if let Ok(bytes) = fs.read(path) {
-            if let Some(name) = distro_from_bytes(&bytes) {
+    // 4. Live ISOs have NO config on their EFI partition (only the loaders), so
+    //    identify the distro from the loader BINARIES. GRUB is checked before
+    //    shim: GRUB is the distro's own build, while shim is often reused from
+    //    the distro it is based on (Parrot ships Debian's signed shim, so a
+    //    shim-first scan named it "Debian"). First the SBAT metadata (exact vendor
+    //    ids, see `sbat`); only if no SBAT names a known distro, fall back — like
+    //    rEFInd's icon detection — to a marker substring scan, in the same order.
+    let loaders: alloc::vec::Vec<alloc::vec::Vec<u8>> = LOADER_SCAN_ORDER
+        .iter()
+        .filter_map(|path| fs.read(path).ok())
+        .collect();
+    for bytes in &loaders {
+        if let Ok(section) = storage::pe::section::find(bytes, b".sbat") {
+            if let Some(name) = crate::sbat::distro_from_sbat(section) {
                 return Some(name);
             }
+        }
+    }
+    for bytes in &loaders {
+        if let Some(name) = distro_from_bytes(bytes) {
+            return Some(name);
         }
     }
     // 5. The FAT volume label (the "ISO volume label"), if it's a real name.
@@ -146,9 +159,15 @@ fn contains_ascii_ci(hay: &[u8], needle: &[u8]) -> bool {
         .any(|w| w.iter().zip(needle).all(|(a, b)| a.eq_ignore_ascii_case(b)))
 }
 
+/// Loader binaries `media_name` inspects, most distro-specific first: the
+/// distro's own GRUB, then the fallback loader (often shim), then shim.
+const LOADER_SCAN_ORDER: [&str; 3] = [
+    "\\EFI\\BOOT\\grubx64.efi", "\\EFI\\BOOT\\BOOTX64.EFI", "\\EFI\\BOOT\\shimx64.efi",
+];
+
 /// Known distro markers to look for in a grub.cfg. Ordered so specific spins are
 /// matched before their base (Parrot/Kali before Debian; archiso before arch).
-const DISTRO_MARKERS: &[(&str, &str)] = &[
+pub(crate) const DISTRO_MARKERS: &[(&str, &str)] = &[
     ("parrot", "Parrot OS"),
     ("kali", "Kali Linux"),
     ("linuxmint", "Linux Mint"),
@@ -277,5 +296,64 @@ mod tests {
         let fs = MockFileStore::new().with_file(FALLBACK_LOADER, &loader);
         let e = discover(&fs);
         assert_eq!(e[0].title, "Ubuntu", "casper marker in the binary maps to Ubuntu");
+    }
+
+    /// A minimal PE image whose only section is `.sbat` holding `sbat`, followed
+    /// by `tail` (stand-in for the rest of the binary, e.g. embedded strings).
+    fn pe_with_sbat(sbat: &[u8], tail: &[u8]) -> alloc::vec::Vec<u8> {
+        let (pe_off, opt_size) = (0x80usize, 0xF0usize);
+        let coff = pe_off + 4;
+        let table = coff + 20 + opt_size;
+        let data_at = table + 40;
+        let mut b = alloc::vec![0u8; data_at];
+        b[0] = b'M'; b[1] = b'Z';
+        b[0x3C..0x40].copy_from_slice(&(pe_off as u32).to_le_bytes());
+        b[pe_off..pe_off + 4].copy_from_slice(b"PE\0\0");
+        b[coff + 2..coff + 4].copy_from_slice(&1u16.to_le_bytes());
+        b[coff + 16..coff + 18].copy_from_slice(&(opt_size as u16).to_le_bytes());
+        b[table..table + 5].copy_from_slice(b".sbat");
+        b[table + 8..table + 12].copy_from_slice(&(sbat.len() as u32).to_le_bytes());
+        b[table + 16..table + 20].copy_from_slice(&(sbat.len() as u32).to_le_bytes());
+        b[table + 20..table + 24].copy_from_slice(&(data_at as u32).to_le_bytes());
+        b.extend_from_slice(sbat);
+        b.extend_from_slice(tail);
+        b
+    }
+
+    #[test]
+    fn parrot_live_iso_is_named_from_grub_sbat_not_debians_shim() {
+        // The real Parrot 7.3 layout: BOOTX64.EFI is Debian's signed shim, the
+        // Parrot identity is only in grubx64.efi. A shim-first substring scan
+        // named this "Debian".
+        let shim = pe_with_sbat(b"sbat,1,SBAT Version,sbat,1,x\nshim.debian,1,Debian,shim,15.8,x\n",
+                                b" Debian Secure Boot CA ");
+        let grub = pe_with_sbat(b"sbat,1,x\ngrub.debian,5,Debian,grub2,2.14-2parrot3,x\n\
+grub.debian14,1,Debian,grub2,2.14-2parrot3,x\ngrub.parrot,1,Parrot Security,grub2,2.14-2parrot3,x\n", b"");
+        let fs = MockFileStore::new()
+            .with_file(FALLBACK_LOADER, &shim)
+            .with_file("\\EFI\\BOOT\\grubx64.efi", &grub)
+            .with_file("\\boot\\grub\\grub.cfg", b"search --set=root --file /.disk/info\nconfigfile ($root)/boot/grub/grub.cfg\n");
+        assert_eq!(discover(&fs)[0].title, "Parrot OS");
+    }
+
+    #[test]
+    fn ubuntu_live_iso_is_named_from_grub_sbat() {
+        let shim = pe_with_sbat(b"sbat,1,x\nshim.ubuntu,1,Ubuntu,shim,15.8-0ubuntu2,x\n", b"");
+        let grub = pe_with_sbat(b"sbat,1,x\ngrub.ubuntu,2,Ubuntu,grub2,2.14-2ubuntu1,x\n\
+grub.peimage,2,Canonical,grub2,2.14-2ubuntu1,x\n", b"");
+        let fs = MockFileStore::new()
+            .with_file(FALLBACK_LOADER, &shim)
+            .with_file("\\EFI\\BOOT\\grubx64.efi", &grub);
+        assert_eq!(discover(&fs)[0].title, "Ubuntu");
+    }
+
+    #[test]
+    fn sbat_beats_substring_false_positives() {
+        // "details" contains the marker "tails", which outranks "debian" in the
+        // substring table. SBAT names the vendor exactly, so it wins.
+        let loader = pe_with_sbat(b"sbat,1,x\nshim.debian,1,Debian,shim,15.8,x\n",
+                                  b" see details at https://example.org ");
+        let fs = MockFileStore::new().with_file(FALLBACK_LOADER, &loader);
+        assert_eq!(discover(&fs)[0].title, "Debian");
     }
 }

@@ -27,6 +27,7 @@ pub mod bls;
 pub mod bootspec;
 pub mod distros;
 pub mod refine;
+pub mod sbat;
 mod build;
 
 #[cfg(test)]
