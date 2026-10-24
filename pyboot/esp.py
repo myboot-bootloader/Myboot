@@ -42,13 +42,15 @@ class StagedEsp:
     real_loader_used: Optional[Path]
 
 
-def stage(efi_binary: Path, real_loader: Optional[Path], *, minimal: bool = False) -> StagedEsp:
+def stage(efi_binary: Path, real_loader: Optional[Path], *, minimal: bool = False,
+          nixos_generations: int = 0, nixos_kernels: int = 1) -> StagedEsp:
     """Create the synthetic ESP under ``build/esp`` and return where it is.
 
     Default: stage a few discoverable "OS" decoys (backed by a real EFI app) for the
     self-contained SMOKE test. ``minimal=True``: stage ONLY MyBoot (fallback + its
     own dir) — used by the ISO test so the real OS on the attached ISO is the only
-    real target and the menu isn't polluted with decoys.
+    real target and the menu isn't polluted with decoys. ``nixos_generations > 0``
+    adds the NixOS-shaped benchmark fixture (see :func:`_stage_nixos_fixture`).
     """
     esp = paths.esp_dir()
     if esp.exists():
@@ -92,5 +94,49 @@ def stage(efi_binary: Path, real_loader: Optional[Path], *, minimal: bool = Fals
     )
     (esp / "EFI/MyBoot/config.toml").write_text(_CONFIG, encoding="utf-8")
 
+    if nixos_generations > 0:
+        _stage_nixos_fixture(esp, real_loader or efi_binary, nixos_generations, nixos_kernels)
+
     console.success(f"staged ESP at {esp.relative_to(paths.repo_root())}")
     return StagedEsp(root=esp, real_loader_used=real_loader)
+
+
+# Size of each fixture kernel: a typical distro bzImage is 10-15 MB. Reading the
+# whole file vs. just its PE header is exactly the cost being measured.
+_KERNEL_BYTES = 12 * 1024 * 1024
+_INITRD_BYTES = 64 * 1024
+
+
+def _stage_nixos_fixture(esp: Path, pe_image: Path, generations: int, kernels: int) -> None:
+    """Lay out what systemd-boot leaves on a NixOS ESP: one BLS entry per
+    generation in ``\\loader\\entries``, all pointing at a few shared kernels and
+    initrds in ``\\EFI\\nixos``. Kernels are a real PE image padded to a realistic
+    size so discovery classifies them as EFI stubs. Benchmark use only: the smoke
+    test's entry-count assertions do not apply to an ESP staged with this.
+    """
+    kernels = max(1, min(kernels, generations))
+    nixos = esp / "EFI/nixos"
+    entries = esp / "loader/entries"
+    nixos.mkdir(parents=True, exist_ok=True)
+    entries.mkdir(parents=True, exist_ok=True)
+    image = pe_image.read_bytes()
+    pairs = []
+    for k in range(kernels):
+        tag = f"{k:032x}"
+        kname = f"{tag}-linux-6.12.{k}-bzImage.efi"
+        iname = f"{tag}-initrd-linux-6.12.{k}-initrd.efi"
+        (nixos / kname).write_bytes(image + bytes(max(0, _KERNEL_BYTES - len(image))))
+        (nixos / iname).write_bytes(bytes(_INITRD_BYTES))
+        pairs.append((kname, iname))
+    for g in range(1, generations + 1):
+        kname, iname = pairs[g % kernels]
+        (entries / f"nixos-generation-{g}.conf").write_text(
+            "title NixOS\n"
+            f"version Generation {g} NixOS 26.05 (Linux 6.12.{g % kernels}), built on 2026-10-01\n"
+            f"linux /efi/nixos/{kname}\n"
+            f"initrd /efi/nixos/{iname}\n"
+            f"options init=/nix/store/{g:032x}-nixos-system/init loglevel=4\n"
+            "machine-id 00000000000000000000000000000000\n",
+            encoding="utf-8",
+        )
+    console.info(f"NixOS fixture: {generations} generations sharing {kernels} kernel(s)")

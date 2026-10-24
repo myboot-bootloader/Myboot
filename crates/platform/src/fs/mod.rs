@@ -13,7 +13,7 @@ use alloc::vec::Vec;
 use uefi::boot;
 use uefi::proto::media::file::{File, FileAttribute, FileInfo, FileMode, FileType, Directory};
 use uefi::{CString16, Status};
-use ports::{FileStore, IoError, IoResult};
+use ports::{DirEntryMeta, FileStore, IoError, IoResult};
 
 /// Zero-sized, stateless adapter over the loaded image's ESP volume.
 pub struct UefiFileStore;
@@ -64,8 +64,42 @@ pub(crate) fn read_in(root: &mut Directory, path: &str) -> IoResult<Vec<u8>> {
     }
 }
 
+/// Read at most `max_len` bytes from the start of a file (a bounded
+/// `RegularFile::read` loop; uefi 0.33 `read` may return fewer bytes than asked).
+pub(crate) fn read_head_in(root: &mut Directory, path: &str, max_len: usize) -> IoResult<Vec<u8>> {
+    let cpath = to_cpath(path)?;
+    let handle = root.open(&cpath, FileMode::Read, FileAttribute::empty())
+        .map_err(|e| map_err(e.status()))?;
+    match handle.into_type().map_err(|e| map_err(e.status()))? {
+        FileType::Regular(mut f) => {
+            let mut data = alloc::vec![0u8; max_len];
+            let mut filled = 0;
+            while filled < max_len {
+                let n = f.read(&mut data[filled..]).map_err(|e| map_err(e.status()))?;
+                if n == 0 { break; }
+                filled += n;
+            }
+            data.truncate(filled);
+            Ok(data)
+        }
+        FileType::Dir(_) => Err(IoError::Other("path is a directory".to_string())),
+    }
+}
+
 pub(crate) fn write_in(root: &mut Directory, path: &str, data: &[u8], append: bool) -> IoResult<()> {
     let cpath = to_cpath(path)?;
+    if !append {
+        // CreateReadWrite opens an existing file WITHOUT truncating it, so a
+        // shorter write would leave the old tail behind. Delete an existing
+        // regular file first, then create it fresh. uefi 0.33: `File::delete(self)`
+        // (EFI_FILE_PROTOCOL.Delete, which also closes the handle).
+        if let Ok(existing) = root.open(&cpath, FileMode::ReadWrite, FileAttribute::empty()) {
+            match existing.into_type().map_err(|e| map_err(e.status()))? {
+                FileType::Regular(f) => f.delete().map_err(|e| map_err(e.status()))?,
+                FileType::Dir(_) => return Err(IoError::Other("path is a directory".to_string())),
+            }
+        }
+    }
     let handle = root.open(&cpath, FileMode::CreateReadWrite, FileAttribute::empty())
         .map_err(|e| map_err(e.status()))?;
     match handle.into_type().map_err(|e| map_err(e.status()))? {
@@ -89,7 +123,10 @@ pub(crate) fn exists_in(root: &mut Directory, path: &str) -> bool {
     }
 }
 
-pub(crate) fn list_dir_in(root: &mut Directory, path: &str) -> IoResult<Vec<String>> {
+/// List a directory with each entry's metadata. uefi 0.33: `FileInfo` exposes
+/// `file_size()`, `modification_time() -> &Time` (`year()`..`second()`),
+/// `is_directory()` and `file_name()`.
+pub(crate) fn list_dir_meta_in(root: &mut Directory, path: &str) -> IoResult<Vec<DirEntryMeta>> {
     let cpath = to_cpath(path)?;
     let handle = root.open(&cpath, FileMode::Read, FileAttribute::empty())
         .map_err(|e| map_err(e.status()))?;
@@ -97,13 +134,20 @@ pub(crate) fn list_dir_in(root: &mut Directory, path: &str) -> IoResult<Vec<Stri
         FileType::Dir(d) => d,
         FileType::Regular(_) => return Err(IoError::Other("path is a file".to_string())),
     };
-    let mut names = Vec::new();
+    let mut out = Vec::new();
     let mut buf = alloc::vec![0u8; 512];
     loop {
         match dir.read_entry(&mut buf) {
             Ok(Some(info)) => {
                 let name = info.file_name().to_string();
-                if name != "." && name != ".." { names.push(name); }
+                if name == "." || name == ".." { continue; }
+                let t = info.modification_time();
+                let modified = ((t.year() as u64) << 40) | ((t.month() as u64) << 32)
+                    | ((t.day() as u64) << 24) | ((t.hour() as u64) << 16)
+                    | ((t.minute() as u64) << 8) | (t.second() as u64);
+                out.push(DirEntryMeta {
+                    name, size: info.file_size(), modified, is_dir: info.is_directory(),
+                });
             }
             Ok(None) => break,
             Err(e) => {
@@ -112,7 +156,11 @@ pub(crate) fn list_dir_in(root: &mut Directory, path: &str) -> IoResult<Vec<Stri
             }
         }
     }
-    Ok(names)
+    Ok(out)
+}
+
+pub(crate) fn list_dir_in(root: &mut Directory, path: &str) -> IoResult<Vec<String>> {
+    Ok(list_dir_meta_in(root, path)?.into_iter().map(|m| m.name).collect())
 }
 
 impl FileStore for UefiFileStore {
@@ -123,4 +171,10 @@ impl FileStore for UefiFileStore {
         match open_image_root() { Ok(mut r) => exists_in(&mut r, path), Err(_) => false }
     }
     fn list_dir(&self, path: &str) -> IoResult<Vec<String>> { list_dir_in(&mut open_image_root()?, path) }
+    fn read_head(&self, path: &str, max_len: usize) -> IoResult<Vec<u8>> {
+        read_head_in(&mut open_image_root()?, path, max_len)
+    }
+    fn list_dir_meta(&self, path: &str) -> IoResult<Vec<DirEntryMeta>> {
+        list_dir_meta_in(&mut open_image_root()?, path)
+    }
 }

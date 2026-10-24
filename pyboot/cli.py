@@ -39,6 +39,13 @@ def _cmd_smoke(args) -> int:
     return 0
 
 
+def _cmd_bench(args) -> int:
+    from . import bench
+    bench.run(_env(), generations=args.generations, kernels=args.kernels,
+              runs=args.runs, timeout=args.timeout)
+    return 0
+
+
 def _cmd_iso(args) -> int:
     from . import iso
     iso.run(_env(), args.iso, ui=args.ui, timeout=args.timeout)
@@ -93,6 +100,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("smoke", help="build + boot the synthetic ESP in QEMU and assert")
     sp.add_argument("--timeout", type=int, default=40, help="QEMU time box (seconds)")
     sp.set_defaults(func=_cmd_smoke)
+
+    sp = sub.add_parser("bench", help="time each boot stage in QEMU (boot-timing build)")
+    sp.add_argument("--generations", type=int, default=100,
+                    help="NixOS-shaped fixture: BLS generations to stage (0 = smoke ESP only)")
+    sp.add_argument("--kernels", type=int, default=4, help="distinct kernels the generations share")
+    sp.add_argument("--runs", type=int, default=3, help="boots to time (medians are reported)")
+    sp.add_argument("--timeout", type=int, default=120, help="per-run QEMU time box (seconds)")
+    sp.set_defaults(func=_cmd_bench)
 
     sp = sub.add_parser("iso-test", help="boot a real distro ISO in QEMU (the real proof)")
     sp.add_argument("iso", nargs="+", help="one or more bootable distro ISOs (each becomes its own volume)")

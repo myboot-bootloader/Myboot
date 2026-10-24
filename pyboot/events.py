@@ -74,3 +74,11 @@ class GopUnavailable:
 class EngineError:
     """`myboot: engine could not hand off: <error>` (from bin/myboot)"""
     error: str
+
+
+@dataclass(frozen=True)
+class Timing:
+    """`myboot: timing <stage> <us>us total=<us>us` (``boot-timing`` builds only)"""
+    stage: str
+    us: int
+    total_us: int

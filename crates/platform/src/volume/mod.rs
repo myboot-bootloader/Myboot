@@ -20,14 +20,39 @@ use uefi::proto::media::file::Directory;
 use uefi::proto::device_path::DevicePath;
 use uefi::proto::device_path::build::{DevicePathBuilder, media::FilePath};
 use uefi::proto::loaded_image::LoadedImage;
-use ports::{FileStore, IoError, IoResult};
+use ports::{DirEntryMeta, FileStore, IoError, IoResult};
 
-use crate::fs::{read_in, write_in, exists_in, list_dir_in, to_cpath, map_err};
+use crate::fs::{read_in, read_head_in, write_in, exists_in, list_dir_in, list_dir_meta_in, to_cpath, map_err};
 
 /// A `FileStore` bound to one filesystem handle. Stateless like `UefiFileStore`:
-/// it reopens the volume root per operation.
+/// it reopens the volume root per operation. Its stable id is computed once, when
+/// the volume is enumerated.
 pub struct Volume {
     handle: Handle,
+    id: String,
+}
+
+/// A stable, opaque id for a volume, derived from its device path (an FNV-1a
+/// hash of the path nodes' data). Same hardware topology → same id across
+/// reboots, so it disambiguates the SAME loader path on different disks and
+/// lets the engine chainload from the right one. Falls back to a fixed string
+/// if the device path can't be read (all such volumes then share one id).
+/// The output must stay byte-identical: `EntryId`s persisted in NVRAM (e.g.
+/// `LastGood`) end in `@<this id>`.
+fn compute_id(handle: Handle) -> String {
+    match boot::open_protocol_exclusive::<DevicePath>(handle) {
+        Ok(dp) => {
+            let mut h: u64 = 0xcbf29ce4_84222325;
+            for node in dp.node_iter() {
+                for &b in node.data() {
+                    h ^= b as u64;
+                    h = h.wrapping_mul(0x0000_0100_0000_01b3);
+                }
+            }
+            alloc::format!("vol{h:016x}")
+        }
+        Err(_) => String::from("vol-unknown"),
+    }
 }
 
 impl Volume {
@@ -48,26 +73,8 @@ impl Volume {
         }
     }
 
-    /// A stable, opaque id for this volume, derived from its device path (an FNV-1a
-    /// hash of the path nodes' data). Same hardware topology → same id across
-    /// reboots, so it disambiguates the SAME loader path on different disks and
-    /// lets the engine chainload from the right one. Falls back to a fixed string
-    /// if the device path can't be read (all such volumes then share one id).
-    pub fn id(&self) -> String {
-        match boot::open_protocol_exclusive::<DevicePath>(self.handle) {
-            Ok(dp) => {
-                let mut h: u64 = 0xcbf29ce4_84222325;
-                for node in dp.node_iter() {
-                    for &b in node.data() {
-                        h ^= b as u64;
-                        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-                    }
-                }
-                alloc::format!("vol{h:016x}")
-            }
-            Err(_) => String::from("vol-unknown"),
-        }
-    }
+    /// This volume's stable id (see `compute_id`), computed once at enumeration.
+    pub fn id(&self) -> &str { &self.id }
 
     /// Build `volume_device_path + FilePath(file_path)` and LoadImage from it.
     fn load_via_device_path(&self, file_path: &str) -> Result<Handle, Status> {
@@ -115,6 +122,12 @@ impl FileStore for Volume {
         match self.open_root() { Ok(mut r) => exists_in(&mut r, path), Err(_) => false }
     }
     fn list_dir(&self, path: &str) -> IoResult<Vec<String>> { list_dir_in(&mut self.open_root()?, path) }
+    fn read_head(&self, path: &str, max_len: usize) -> IoResult<Vec<u8>> {
+        read_head_in(&mut self.open_root()?, path, max_len)
+    }
+    fn list_dir_meta(&self, path: &str) -> IoResult<Vec<DirEntryMeta>> {
+        list_dir_meta_in(&mut self.open_root()?, path)
+    }
     fn volume_label(&self) -> Option<String> {
         use uefi::proto::media::file::{FileSystemVolumeLabel, File};
         use alloc::string::ToString;
@@ -162,7 +175,7 @@ pub fn connect_all_controllers() {
 /// All filesystems the firmware knows about, each as a `Volume`.
 pub fn volumes() -> Vec<Volume> {
     match boot::locate_handle_buffer(boot::SearchType::ByProtocol(&SimpleFileSystem::GUID)) {
-        Ok(handles) => handles.iter().map(|&handle| Volume { handle }).collect(),
+        Ok(handles) => handles.iter().map(|&handle| Volume { handle, id: compute_id(handle) }).collect(),
         Err(_) => Vec::new(),
     }
 }
@@ -176,7 +189,7 @@ pub fn own_volume_id() -> Option<String> {
     use uefi::proto::loaded_image::LoadedImage;
     let li = boot::open_protocol_exclusive::<LoadedImage>(boot::image_handle()).ok()?;
     let device = li.device()?;
-    Some(Volume { handle: device }.id())
+    Some(compute_id(device))
 }
 
 /// A `FileStore` that fans out across EVERY volume, so the existing single-store
@@ -194,6 +207,13 @@ impl MultiVolume {
     /// boot volume for writes.
     pub fn discover() -> Self {
         connect_all_controllers();
+        Self::enumerate()
+    }
+
+    /// Enumerate filesystems WITHOUT connecting controllers first. The engine
+    /// calls `connect_all_controllers()` itself before this so the two steps can
+    /// be timed separately; `discover()` is the combined form.
+    pub fn enumerate() -> Self {
         MultiVolume { vols: volumes(), boot: crate::fs::UefiFileStore::new() }
     }
 
@@ -206,7 +226,7 @@ impl MultiVolume {
     /// entry it finds on a volume with that id, so two disks that share a loader
     /// path stay distinct.
     pub fn scan_targets(&self) -> Vec<(String, &dyn FileStore)> {
-        self.vols.iter().map(|v| (v.id(), v as &dyn FileStore)).collect()
+        self.vols.iter().map(|v| (String::from(v.id()), v as &dyn FileStore)).collect()
     }
 
     /// Chainload `file_path` from the SPECIFIC volume identified by `volume_id`
@@ -257,5 +277,24 @@ impl FileStore for MultiVolume {
             }
         }
         if found { Ok(names) } else { Err(IoError::NotFound) }
+    }
+    fn read_head(&self, path: &str, max_len: usize) -> IoResult<Vec<u8>> {
+        for v in &self.vols {
+            if let Ok(bytes) = v.read_head(path, max_len) { return Ok(bytes); }
+        }
+        Err(IoError::NotFound)
+    }
+    /// Union by name across volumes; the first volume listing a name wins
+    /// (mirrors `list_dir`).
+    fn list_dir_meta(&self, path: &str) -> IoResult<Vec<DirEntryMeta>> {
+        let mut items: Vec<DirEntryMeta> = Vec::new();
+        let mut found = false;
+        for v in &self.vols {
+            if let Ok(list) = v.list_dir_meta(path) {
+                found = true;
+                for m in list { if !items.iter().any(|x| x.name == m.name) { items.push(m); } }
+            }
+        }
+        if found { Ok(items) } else { Err(IoError::NotFound) }
     }
 }

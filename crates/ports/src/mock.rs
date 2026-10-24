@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 use alloc::collections::BTreeMap;
 use crate::error::{VarNamespace, IoError, IoResult};
 use crate::traits::{VarStore, FileStore};
+use crate::meta::DirEntryMeta;
 
 #[derive(Default)]
 pub struct MockVarStore {
@@ -38,11 +39,25 @@ impl VarStore for MockVarStore {
 }
 
 #[derive(Default)]
-pub struct MockFileStore { files: BTreeMap<String, Vec<u8>> }
+pub struct MockFileStore {
+    files: BTreeMap<String, Vec<u8>>,
+    /// Packed modification times (see `DirEntryMeta::modified`); 0 if unset.
+    mtimes: BTreeMap<String, u64>,
+}
 impl MockFileStore {
     pub fn new() -> Self { Self::default() }
     pub fn with_file(mut self, path: &str, data: &[u8]) -> Self {
         self.files.insert(path.to_string(), data.to_vec()); self
+    }
+    pub fn with_mtime(mut self, path: &str, modified: u64) -> Self {
+        self.mtimes.insert(path.to_string(), modified); self
+    }
+    /// The directory prefix with exactly one trailing separator (`/` or `\`).
+    fn dir_prefix(path: &str) -> (String, char) {
+        let sep = if path.contains('\\') { '\\' } else { '/' };
+        let mut prefix = String::from(path);
+        if !prefix.ends_with(sep) { prefix.push(sep); }
+        (prefix, sep)
     }
 }
 impl FileStore for MockFileStore {
@@ -56,11 +71,13 @@ impl FileStore for MockFileStore {
         self.files.entry(path.to_string()).or_default().extend_from_slice(data); Ok(())
     }
     fn exists(&self, path: &str) -> bool { self.files.contains_key(path) }
+    fn read_head(&self, path: &str, max_len: usize) -> IoResult<Vec<u8>> {
+        let data = self.files.get(path).ok_or(IoError::NotFound)?;
+        Ok(data[..data.len().min(max_len)].to_vec())
+    }
     fn list_dir(&self, path: &str) -> IoResult<Vec<String>> {
         // Normalise: ensure a single trailing separator, accept `/` or `\`.
-        let sep = if path.contains('\\') { '\\' } else { '/' };
-        let mut prefix = String::from(path);
-        if !prefix.ends_with(sep) { prefix.push(sep); }
+        let (prefix, sep) = Self::dir_prefix(path);
         let mut names: Vec<String> = Vec::new();
         for full in self.files.keys() {
             if let Some(rest) = full.strip_prefix(&prefix) {
@@ -74,5 +91,21 @@ impl FileStore for MockFileStore {
             return Err(IoError::NotFound);
         }
         Ok(names)
+    }
+    fn list_dir_meta(&self, path: &str) -> IoResult<Vec<DirEntryMeta>> {
+        // Same children as `list_dir`. A child is a file if `prefix + child` is a
+        // stored path; otherwise it is an implicit directory (size 0).
+        let (prefix, _) = Self::dir_prefix(path);
+        let mut out = Vec::new();
+        for name in self.list_dir(path)? {
+            let full = alloc::format!("{prefix}{name}");
+            let (size, is_dir) = match self.files.get(&full) {
+                Some(data) => (data.len() as u64, false),
+                None => (0, true),
+            };
+            let modified = self.mtimes.get(&full).copied().unwrap_or(0);
+            out.push(DirEntryMeta { name, size, modified, is_dir });
+        }
+        Ok(out)
     }
 }

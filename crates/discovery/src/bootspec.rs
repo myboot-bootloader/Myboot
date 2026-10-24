@@ -16,8 +16,11 @@ pub const SPEC_V1: &str = "org.nixos.specialisation.v1";
 
 pub fn discover<F: FileStore + ?Sized>(fs: &F) -> Vec<RawEntry> {
     let mut out = Vec::new();
-    let names = match fs.list_dir(BOOTSPEC_DIR) { Ok(n) => n, Err(_) => return out };
-    for name in names {
+    let names = match fs.list_dir_meta(BOOTSPEC_DIR) { Ok(n) => n, Err(_) => return out };
+    // Only directories can hold a bootspec file. On a systemd-boot-managed NixOS
+    // ESP, `\EFI\nixos` is full of kernel/initrd FILES; probing two names under
+    // each of those was two failed opens per file, every boot.
+    for name in names.into_iter().filter(|m| m.is_dir).map(|m| m.name) {
         // Generation directories are conventionally named with the generation
         // number; we accept any dir that contains a bootspec file.
         for file in ["bootspec.json", "boot.json"] {
@@ -126,5 +129,18 @@ mod tests {
         assert_eq!(generation_of("generation-128"), Some(128));
         assert_eq!(generation_of("128"), Some(128));
         assert_eq!(generation_of("nixos"), None);
+    }
+
+    #[test]
+    fn files_in_the_nixos_dir_are_not_probed_as_generations() {
+        // Kernel/initrd files sit beside generation dirs; only the dir yields an entry.
+        let doc = br#"{"org.nixos.bootspec.v1":{"kernel":"/EFI/nixos/k.efi","label":"NixOS"}}"#;
+        let fs = MockFileStore::new()
+            .with_file("\\EFI\\nixos\\k.efi", b"MZ")
+            .with_file("\\EFI\\nixos\\i.efi", b"x")
+            .with_file("\\EFI\\nixos\\7\\boot.json", doc);
+        let out = discover(&fs);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].role, EntryRole::Generation(7));
     }
 }

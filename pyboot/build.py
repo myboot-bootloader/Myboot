@@ -6,7 +6,7 @@ firmware binary. It does not stage an ESP or launch QEMU.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from . import console, proc, paths
 from .errors import BuildError
@@ -38,13 +38,16 @@ def host_tests(host_triple: str) -> None:
     console.success(f"all {len(PURE_CRATES)} pure-crate test suites passed")
 
 
-def build_efi() -> Path:
-    """Build ``myboot.efi`` for the UEFI target and return its path."""
+def build_efi(features: Optional[List[str]] = None) -> Path:
+    """Build ``myboot.efi`` for the UEFI target and return its path.
+
+    ``features`` are passed to cargo verbatim (e.g. ``["engine/boot-timing"]``).
+    """
     console.step("building myboot.efi (release, x86_64-unknown-uefi)")
-    proc.run(
-        ["cargo", "build", "-p", "myboot", "--release", "--target", paths.EFI_TARGET],
-        cwd=str(paths.repo_root()),
-    )
+    cmd = ["cargo", "build", "-p", "myboot", "--release", "--target", paths.EFI_TARGET]
+    if features:
+        cmd += ["--features", ",".join(features)]
+    proc.run(cmd, cwd=str(paths.repo_root()))
     efi = paths.efi_binary()
     if not efi.is_file():
         raise BuildError(f"build reported success but {efi} is missing")

@@ -47,30 +47,6 @@ pub fn discover<F: FileStore + ?Sized>(fs: &F) -> Vec<RawEntry> {
 /// is on the ISO9660 side and usually NOT here). Priority: an explicit product
 /// file, then the distro named in the EFI `grub.cfg`, then the FAT volume label.
 /// Pure and total — any read/parse failure just falls through.
-/// Diagnostic: a sample of printable ASCII strings (>= 6 chars) from the fallback
-/// loader binary, so we can SEE what distro markers (if any) are embedded when
-/// automatic naming falls back to generic. Capped so the log stays readable.
-pub fn loader_string_sample<F: FileStore + ?Sized>(fs: &F) -> alloc::string::String {
-    let bytes = match fs.read(FALLBACK_LOADER) {
-        Ok(b) => b,
-        Err(_) => return alloc::string::String::new(),
-    };
-    let mut out = alloc::string::String::new();
-    let mut run = alloc::string::String::new();
-    for &b in bytes.iter() {
-        if b.is_ascii_graphic() || b == b' ' {
-            run.push(b as char);
-        } else {
-            if run.trim().len() >= 6 && out.len() < 400 {
-                out.push_str(run.trim());
-                out.push('|');
-            }
-            run.clear();
-        }
-    }
-    out.chars().take(400).collect()
-}
-
 fn media_name<F: FileStore + ?Sized>(fs: &F) -> Option<alloc::string::String> {
     // 1. A `BOOT.CSV` next to the loader carries a clean label (shim writes e.g.
     //    `shimx64.efi,ubuntu,,This is the boot entry for ubuntu`). This is what

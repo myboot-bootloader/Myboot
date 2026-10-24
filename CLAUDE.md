@@ -63,9 +63,11 @@ The current, ordered work is in **`TASKS.md`** — start there.
 - PROVEN: builds for the UEFI target; runs on OVMF firmware; multi-volume scan,
   discovery, health, distro detection, menu, never-dead-end fallback all execute;
   chainload successfully launches a self-contained EFI app (the UEFI shell).
-- UNPROVEN (your top priority to settle): chainloading a **real OS loader that
-  must find its own files** (Ubuntu's shim/GRUB, Windows Boot Manager) via the new
-  device-path path. The shell test does NOT prove this. The ISO test does.
+- PROVEN on QEMU/OVMF (2026-10-24, see TESTLOG.md): chainloading a **real OS loader
+  that must find its own files** via the device-path path. Ubuntu 26.04.1 server ISO
+  reached its installer; Parrot 7.3 ISO reached its live desktop.
+- UNPROVEN: the same on real hardware; installed (on-disk) OSes such as Windows Boot
+  Manager or an installed shim/GRUB; Secure Boot enabled.
 
 ---
 
